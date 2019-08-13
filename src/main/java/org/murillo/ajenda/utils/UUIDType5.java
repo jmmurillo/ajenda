@@ -32,7 +32,7 @@ public class UUIDType5 {
         sha1Bytes[8] |= 0x80;  /* set to IETF variant  */
         return fromBytes(sha1Bytes);
     }
-    
+
     public static UUID nameUUIDFromNamespaceAndBytes(UUID namespace, byte[] name) {
         MessageDigest md;
         try {

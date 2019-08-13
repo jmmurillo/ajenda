@@ -1,7 +1,10 @@
 package org.murillo.ajenda.common;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.HashMap;
 
 import static org.murillo.ajenda.utils.Common.getTableNameForTopic;
 
@@ -22,6 +25,12 @@ public class InitializationModel {
                     + "due_date ASC "
                     + ") WITH (fillfactor = 70) ";
 
+    public static final String COLUMNS_QUERY =
+            "SELECT column_name, data_type " +
+                    "FROM   information_schema.columns " +
+                    "WHERE  table_schema = 'public' " +
+                    "AND    table_name = ?; ";
+
     public static void initTableForTopic(ConnectionFactory<?> dataSource, String topic) throws Exception {
         String tableName = getTableNameForTopic(topic);
         try (Connection conn = dataSource.getConnection()) {
@@ -34,10 +43,64 @@ public class InitializationModel {
                     tableName, tableName);
             try (Statement stmt = conn.createStatement()) {
                 stmt.execute(createTableSql);
+
+                //Assert table exists and has expected columns
+                HashMap<String, String> columnsForTable = getColumnsForTable(conn, tableName);
+                ensureColumnAndType(columnsForTable, tableName, "uuid", "UUID");
+                ensureColumnAndType(columnsForTable, tableName, "creation_date", "BIGINT");
+                ensureColumnAndType(columnsForTable, tableName, "due_date", "BIGINT");
+                ensureColumnAndType(columnsForTable, tableName, "expiry_date", "BIGINT");
+                ensureColumnAndType(columnsForTable, tableName, "attempts", "INTEGER");
+                ensureColumnAndType(columnsForTable, tableName, "payload", "TEXT");
+
                 stmt.execute(createIndexSql);
                 conn.commit();
             }
         }
-    }    
-    
+    }
+
+    private static void ensureColumnAndType(HashMap<String, String> columnsForTable, String tableName, String columnName, String expectedType) {
+        String actualType = columnsForTable.get(columnName);
+        if (actualType == null) {
+            throw new IllegalStateException(String.format("Column %s does not exist in Ajenda table %s", columnName, tableName));
+        } else if (!actualType.equalsIgnoreCase(expectedType)) {
+            throw new IllegalStateException(String.format("Column %s in Ajenda table %s does not match the expected type: " +
+                    "expected %s but found %s", columnName, tableName, expectedType, actualType));
+        }
+    }
+
+    public static boolean doesTableExist(ConnectionFactory ds, String tableName) throws Exception {
+        String query =
+                "SELECT EXISTS (" +
+                        "SELECT 1 " +
+                        "FROM   information_schema.tables " +
+                        "WHERE  table_schema = 'public' " +
+                        "AND    table_name = ?); ";
+
+        try (Connection connection = ds.getConnection()) {
+            try (PreparedStatement statement = connection.prepareStatement(query)) {
+                statement.setString(1, tableName);
+                ResultSet resultSet = statement.executeQuery();
+                return resultSet.next() && resultSet.getBoolean(1);
+            }
+        }
+    }
+
+    public static HashMap<String, String> getColumnsForTable(Connection conn, String tableName) throws Exception {
+
+        HashMap<String, String> columns = new HashMap<>();
+
+        try (PreparedStatement statement = conn.prepareStatement(COLUMNS_QUERY)) {
+            statement.setString(1, tableName);
+            ResultSet resultSet = statement.executeQuery();
+            while (resultSet.next()) {
+                columns.put(
+                        resultSet.getString(1),
+                        resultSet.getString(2));
+            }
+
+        }
+        return columns;
+    }
+
 }
