@@ -6,6 +6,7 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.HashMap;
 
+import static org.murillo.ajenda.utils.Common.getPeriodicTableNameForTopic;
 import static org.murillo.ajenda.utils.Common.getTableNameForTopic;
 
 public class InitializationModel {
@@ -17,8 +18,19 @@ public class InitializationModel {
                     + "due_date         BIGINT, "
                     + "expiry_date      BIGINT, "
                     + "attempts         INTEGER, "
-                    + "payload          TEXT "
+                    + "payload          TEXT, "
+                    + "periodic_uuid    UUID "
                     + ") WITH (fillfactor = 70) ";
+
+    public static final String TABLE_FOR_PERIODIC_TOPIC_QUERY =
+            "CREATE TABLE IF NOT EXISTS %s ( "
+                    + "uuid             UUID PRIMARY KEY, "
+                    + "creation_date    BIGINT, "
+                    + "pattern_type     INTEGER, "
+                    + "pattern          TEXT, "
+                    + "payload          TEXT, "
+                    + "skip_missed      BOOLEAN "
+                    + ")";    
 
     public static final String CREATE_DUE_DATE_INDEX_QUERY =
             "CREATE INDEX IF NOT EXISTS idx_%s_duedate ON %s ("
@@ -28,31 +40,45 @@ public class InitializationModel {
     public static final String COLUMNS_QUERY =
             "SELECT column_name, data_type " +
                     "FROM   information_schema.columns " +
-                    "WHERE  table_schema = 'public' " +
-                    "AND    table_name = ?; ";
+                    "WHERE  table_schema = ? " +
+                    "AND    table_name = ? ";
 
-    public static void initTableForTopic(ConnectionFactory<?> dataSource, String topic) throws Exception {
+    public static void initTableForTopic(ConnectionFactory<?> dataSource, String topic, String schemaName) throws Exception {
         String tableName = getTableNameForTopic(topic);
+        String periodicTableName = getPeriodicTableNameForTopic(topic);
         try (Connection conn = dataSource.getConnection()) {
             if (conn.getAutoCommit()) throw new IllegalStateException("Connection must have auto-commit disabled");
             String createTableSql = String.format(
                     TABLE_FOR_TOPIC_QUERY,
                     tableName);
+            String createPeriodicTableSql = String.format(
+                    TABLE_FOR_PERIODIC_TOPIC_QUERY,
+                    periodicTableName);            
             String createIndexSql = String.format(
                     CREATE_DUE_DATE_INDEX_QUERY,
                     tableName, tableName);
             try (Statement stmt = conn.createStatement()) {
+                
                 stmt.execute(createTableSql);
-
                 //Assert table exists and has expected columns
-                HashMap<String, String> columnsForTable = getColumnsForTable(conn, tableName);
+                HashMap<String, String> columnsForTable = getColumnsForTable(conn, tableName, schemaName);
                 ensureColumnAndType(columnsForTable, tableName, "uuid", "UUID");
                 ensureColumnAndType(columnsForTable, tableName, "creation_date", "BIGINT");
                 ensureColumnAndType(columnsForTable, tableName, "due_date", "BIGINT");
                 ensureColumnAndType(columnsForTable, tableName, "expiry_date", "BIGINT");
                 ensureColumnAndType(columnsForTable, tableName, "attempts", "INTEGER");
                 ensureColumnAndType(columnsForTable, tableName, "payload", "TEXT");
+                ensureColumnAndType(columnsForTable, tableName, "periodic_uuid", "UUID");
 
+                stmt.execute(createPeriodicTableSql);
+                //Assert periodic table exists and has expected columns
+                columnsForTable = getColumnsForTable(conn, periodicTableName, schemaName);
+                ensureColumnAndType(columnsForTable, periodicTableName, "uuid", "UUID");
+                ensureColumnAndType(columnsForTable, periodicTableName, "creation_date", "BIGINT");
+                ensureColumnAndType(columnsForTable, periodicTableName, "pattern_type", "INTEGER");
+                ensureColumnAndType(columnsForTable, periodicTableName, "pattern", "TEXT");                
+                ensureColumnAndType(columnsForTable, periodicTableName, "payload", "TEXT");                
+                
                 stmt.execute(createIndexSql);
                 conn.commit();
             }
@@ -75,7 +101,7 @@ public class InitializationModel {
                         "SELECT 1 " +
                         "FROM   information_schema.tables " +
                         "WHERE  table_schema = 'public' " +
-                        "AND    table_name = ?); ";
+                        "AND    table_name = ?) ";
 
         try (Connection connection = ds.getConnection()) {
             try (PreparedStatement statement = connection.prepareStatement(query)) {
@@ -86,12 +112,13 @@ public class InitializationModel {
         }
     }
 
-    public static HashMap<String, String> getColumnsForTable(Connection conn, String tableName) throws Exception {
+    public static HashMap<String, String> getColumnsForTable(Connection conn, String tableName, String schemaName) throws Exception {
 
         HashMap<String, String> columns = new HashMap<>();
 
         try (PreparedStatement statement = conn.prepareStatement(COLUMNS_QUERY)) {
-            statement.setString(1, tableName);
+            statement.setString(1, schemaName);
+            statement.setString(2, tableName);
             ResultSet resultSet = statement.executeQuery();
             while (resultSet.next()) {
                 columns.put(

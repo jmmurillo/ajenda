@@ -12,32 +12,41 @@ import java.sql.Connection;
 
 public class AjendaBooker<T extends Connection> implements ConnectionFactory<T> {
 
+    public static final String DEFAULT_SCHEMA_NAME = "public";
     private final ConnectionFactory<T> dataSource;
     private final String topic;
+    private final String schemaName;
     private final String tableName;
     private final Clock clock;
 
     public AjendaBooker(ConnectionFactory<T> dataSource, String topic) throws Exception {
-        this(dataSource, new SyncedClock(dataSource), topic);
+        this(dataSource, topic, new SyncedClock(dataSource), DEFAULT_SCHEMA_NAME);
+    }
+
+    public AjendaBooker(ConnectionFactory<T> dataSource, String topic,
+                        String customSchema) throws Exception {
+        this(dataSource, topic, new SyncedClock(dataSource), customSchema);
     }
 
     public AjendaBooker(AjendaScheduler<T> ajendaScheduler) {
         this.dataSource = ajendaScheduler;
         this.clock = ajendaScheduler.getClock();
         this.topic = ajendaScheduler.getTopic();
-        this.tableName = Common.getTableNameForTopic(topic);
+        this.schemaName = ajendaScheduler.getSchemaName();
+        this.tableName = ajendaScheduler.getTableNameWithSchema();
     }
 
-    public void shutdown(long gracePeriod) {
-        //TODO
+    public AjendaBooker(ConnectionFactory<T> dataSource, String topic, Clock clock) throws Exception {
+        this(dataSource, topic, clock, DEFAULT_SCHEMA_NAME);
     }
 
-    public AjendaBooker(ConnectionFactory<T> dataSource, Clock clock, String topic) throws Exception {
+    public AjendaBooker(ConnectionFactory<T> dataSource, String topic, Clock clock, String schemaName) throws Exception {
         this.dataSource = dataSource;
         this.clock = clock;
         this.topic = topic;
+        this.schemaName = schemaName;
         this.tableName = Common.getTableNameForTopic(topic);
-        InitializationModel.initTableForTopic(dataSource, topic);
+        InitializationModel.initTableForTopic(dataSource, topic, schemaName);
     }
 
     public T getConnection() throws Exception {
@@ -46,8 +55,21 @@ public class AjendaBooker<T extends Connection> implements ConnectionFactory<T> 
         return connection;
     }
 
+    public void shutdown(long gracePeriod) {
+        //TODO
+    }
+
     public String getTopic() {
         return topic;
+    }
+
+
+    public String getTableNameWithSchema() {
+        return '\"' + schemaName + "\"." + tableName;
+    }
+
+    public String getSchemaName() {
+        return schemaName;
     }
 
     public String getTableName() {
@@ -59,7 +81,7 @@ public class AjendaBooker<T extends Connection> implements ConnectionFactory<T> 
     }
 
     public void bookAppointment(AppointmentBooking booking) throws Exception {
-        BookModel.book(this.getTableName(), this, this.getClock(), booking, 0);
+        BookModel.book(this.getTableNameWithSchema(), this, this.getClock(), booking, 0);
     }
-    
+
 }

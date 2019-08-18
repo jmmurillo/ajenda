@@ -12,6 +12,7 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 import static org.murillo.ajenda.handling.Utils.extractAppointmentDue;
@@ -34,18 +35,18 @@ public class AtLeastOnceAckEachModel {
                     + "WHERE uuid = any(array("
                     + "  SELECT uuid "
                     + "  FROM %s "
-                    + "  WHERE due_date < ? "
-                    + "    AND expiry_date < ? "
+                    + "  WHERE due_date <= ? "
+                    + "    AND expiry_date <= ? "
                     + "    AND %s "  //CUSTOM CONDITION
                     + "  ORDER BY due_date, expiry_date "
                     + "  FETCH FIRST ? ROWS ONLY "
                     + "  FOR UPDATE SKIP LOCKED "
-                    + ")) RETURNING *;";
+                    + ")) RETURNING *";
 
     private static final String ACK_ONE_QUERY =
             "DELETE "
                     + "FROM %s "
-                    + "WHERE uuid = ?;";
+                    + "WHERE uuid = ?";
 
     public static void process(
             AjendaScheduler ajendaScheduler,
@@ -53,6 +54,7 @@ public class AtLeastOnceAckEachModel {
             int limitSize,
             long nowEpoch,
             long timeout,
+            boolean blocking,
             SimpleAppointmentListener listener,
             String customSqlCondition
     ) throws Exception {
@@ -62,6 +64,7 @@ public class AtLeastOnceAckEachModel {
             scheduleAndAckIndividually(
                     ajendaScheduler,
                     nowEpoch,
+                    blocking,
                     listener,
                     selectAndUpdate(ajendaScheduler, pollPeriod, minSize, nowEpoch, timeout, customSqlCondition)
             );
@@ -74,6 +77,7 @@ public class AtLeastOnceAckEachModel {
             int limitSize,
             long nowEpoch,
             long timeout,
+            boolean blocking,
             ConnectionInAppointmentListener listener,
             String customSqlCondition
     ) throws Exception {
@@ -83,76 +87,97 @@ public class AtLeastOnceAckEachModel {
             scheduleAndAckIndividually(
                     ajendaScheduler,
                     nowEpoch,
+                    blocking,
                     listener,
                     selectAndUpdate(ajendaScheduler, pollPeriod, minSize, nowEpoch, timeout, customSqlCondition)
             );
         }
     }
-
-
+    
     private static void scheduleAndAckIndividually(
             AjendaScheduler ajendaScheduler,
             long nowEpoch,
+            boolean blocking,
             SimpleAppointmentListener listener,
-            List<AppointmentDue> appointments) {
-
-        String tableName = ajendaScheduler.getTableName();
-        for (AppointmentDue a : appointments) {
-            long delay = a.getDueTimestamp() - nowEpoch;
-            ajendaScheduler.getExecutor().schedule(() -> {
-                        try {
-                            listener.receive(a);
-                        } catch (UnhandledAppointmentException th) {
-                            //Controlled exception
-                            return;
-                        } catch (Throwable th) {
-                            //Unexpected exception
-                            //TODO log
-                            th.printStackTrace();
-                            return;
-                        }
-                        try {
-                            ackIndividually(
-                                    ajendaScheduler,
-                                    tableName,
-                                    a.getAppointmentUid());
-                        } catch (Throwable th) {
-                            //TODO log
-                            th.printStackTrace();
-                            return;
-                        }
-                    },
-                    delay > 0 ? delay : 0,
-                    TimeUnit.MILLISECONDS);
+            List<AppointmentDue> appointments) throws InterruptedException {
+        Semaphore semaphore = blocking ?
+                new Semaphore(0)
+                : null;
+        String tableName = ajendaScheduler.getTableNameWithSchema();
+        int scheduled = 0;
+        try {
+            for (AppointmentDue a : appointments) {
+                long delay = a.getDueTimestamp() - nowEpoch;
+                ajendaScheduler.getExecutor().schedule(() -> {
+                            try {
+                                listener.receive(a);
+                            } catch (UnhandledAppointmentException th) {
+                                //Controlled exception
+                                return;
+                            } catch (Throwable th) {
+                                //Unexpected exception
+                                //TODO log
+                                th.printStackTrace();
+                                return;
+                            }
+                            try {
+                                ackIndividually(
+                                        ajendaScheduler,
+                                        tableName,
+                                        a.getAppointmentUid());
+                            } catch (Throwable th) {
+                                //TODO log
+                                th.printStackTrace();
+                                return;
+                            } finally {
+                                if (blocking) semaphore.release();
+                            }
+                        },
+                        delay > 0 ? delay : 0,
+                        TimeUnit.MILLISECONDS);
+                scheduled++;
+            }
+        } finally {
+            if (blocking) semaphore.acquire(scheduled);
         }
     }
 
     private static void scheduleAndAckIndividually(
             AjendaScheduler ajendaScheduler,
             long nowEpoch,
+            boolean blocking,
             ConnectionInAppointmentListener listener,
-            List<AppointmentDue> appointments) {
+            List<AppointmentDue> appointments) throws InterruptedException {
 
-        String tableName = ajendaScheduler.getTableName();
-        for (AppointmentDue a : appointments) {
-            long delay = a.getDueTimestamp() - nowEpoch;
-            ajendaScheduler.getExecutor().schedule(() -> {
-                        try {
-                            executeAndAck(
-                                    ajendaScheduler,
-                                    tableName,
-                                    listener,
-                                    a
-                            );
-                        } catch (Throwable th) {
-                            //TODO log
-                            //TODO free or ignore until expiration
-                            th.printStackTrace();
-                            return;
-                        }
-                    },
-                    delay > 0 ? delay : 0,
-                    TimeUnit.MILLISECONDS);
+        Semaphore semaphore = blocking ?
+                new Semaphore(0)
+                : null;
+        String tableName = ajendaScheduler.getTableNameWithSchema();
+        int scheduled = 0;
+        try {
+            for (AppointmentDue a : appointments) {
+                long delay = a.getDueTimestamp() - nowEpoch;
+                ajendaScheduler.getExecutor().schedule(() -> {
+                            try {
+                                executeAndAck(
+                                        ajendaScheduler,
+                                        tableName,
+                                        listener,
+                                        a
+                                );
+                            } catch (Throwable th) {
+                                //TODO log
+                                //TODO free or ignore until expiration
+                                th.printStackTrace();
+                                return;
+                            }
+                        },
+                        delay > 0 ? delay : 0,
+                        TimeUnit.MILLISECONDS);
+                scheduled++;
+            }
+        } finally {
+            if (blocking) semaphore.acquire(scheduled);
         }
     }
 
@@ -206,7 +231,7 @@ public class AtLeastOnceAckEachModel {
             long timeout,
             String customSqlCondition) throws Exception {
 
-        String tableName = ajendaScheduler.getTableName();
+        String tableName = ajendaScheduler.getTableNameWithSchema();
         long limitDueDate = nowEpoch + pollPeriod;
 
         String sql = String.format(

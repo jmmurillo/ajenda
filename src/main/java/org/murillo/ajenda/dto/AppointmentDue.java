@@ -11,6 +11,7 @@ public class AppointmentDue {
     private String payload;
     private int attempts;
     private HashMap<String, ?> extraParams;
+    private UUID periodicAppointmentUid;
 
     public AppointmentDue(
             UUID appointmentUid,
@@ -18,7 +19,8 @@ public class AppointmentDue {
             long readTimestamp,
             String payload,
             int attempts,
-            HashMap<String, ?> extraParams
+            HashMap<String, ?> extraParams,
+            UUID periodicAppointmentUid
     ) {
         this.appointmentUid = appointmentUid;
         this.dueTimestamp = dueTimestamp;
@@ -26,6 +28,7 @@ public class AppointmentDue {
         this.payload = payload;
         this.attempts = attempts;
         this.extraParams = extraParams;
+        this.periodicAppointmentUid = periodicAppointmentUid;
     }
 
     public UUID getAppointmentUid() {
@@ -52,6 +55,10 @@ public class AppointmentDue {
         return extraParams;
     }
 
+    public UUID getPeriodicAppointmentUid() {
+        return periodicAppointmentUid;
+    }
+
     public void setAppointmentUid(UUID appointmentUid) {
         this.appointmentUid = appointmentUid;
     }
@@ -76,6 +83,10 @@ public class AppointmentDue {
         this.extraParams = extraParams;
     }
 
+    public void setPeriodicAppointmentUid(UUID periodicAppointmentUid) {
+        this.periodicAppointmentUid = periodicAppointmentUid;
+    }
+
     @Override
     public String toString() {
         return "AppointmentDue{" +
@@ -85,6 +96,7 @@ public class AppointmentDue {
                 ", payload='" + payload + '\'' +
                 ", attempts=" + attempts +
                 ", extraParams=" + extraParams +
+                ", periodicAppointmentUid=" + periodicAppointmentUid +
                 '}';
     }
 }

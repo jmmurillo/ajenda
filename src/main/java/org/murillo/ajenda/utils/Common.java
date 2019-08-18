@@ -10,6 +10,10 @@ import java.util.concurrent.TimeUnit;
 public class Common {
     public static String getTableNameForTopic(String topic) {
         return String.format("ajenda_%s", topic).toLowerCase(Locale.ENGLISH);
+    }    
+    
+    public static String getPeriodicTableNameForTopic(String topic) {
+        return String.format("periodic_ajenda_%s", topic).toLowerCase(Locale.ENGLISH);
     }
 
     public static long nowEpoch() {

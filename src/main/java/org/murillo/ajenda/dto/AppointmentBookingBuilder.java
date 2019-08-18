@@ -10,10 +10,8 @@ public final class AppointmentBookingBuilder {
     private static final UUID UUID_ZERO = new UUID(0L, 0L);
 
     private UUID appointmentUid;
-    private UUID issuerUid;
-    private Long dueTimestamp;
+    private long dueTimestamp;
     private String payload;
-    private int attampts;
     private HashMap<String, Object> extraParams = new HashMap<>();
 
     private AppointmentBookingBuilder() {
@@ -21,11 +19,6 @@ public final class AppointmentBookingBuilder {
 
     public static AppointmentBookingBuilder aBooking() {
         return new AppointmentBookingBuilder();
-    }
-
-    public AppointmentBookingBuilder withTopic(String topic) {
-        if (topic == null || topic.isEmpty()) throw new IllegalArgumentException("topic must not be null");
-        return this;
     }
 
     public AppointmentBookingBuilder withUid(UUID appointmentUid) {
@@ -36,11 +29,6 @@ public final class AppointmentBookingBuilder {
 
     public AppointmentBookingBuilder withHashUid() {
         this.appointmentUid = null;
-        return this;
-    }
-
-    public AppointmentBookingBuilder withIssuerUid(UUID issuerUid) {
-        this.issuerUid = issuerUid;
         return this;
     }
 
@@ -62,13 +50,12 @@ public final class AppointmentBookingBuilder {
     }
 
 
-
     public AppointmentBookingBuilder withPayload(String payload) {
         this.payload = payload;
         return this;
     }
 
-    public AppointmentBookingBuilder withExtraParam(String columnName, Object value){
+    public AppointmentBookingBuilder withExtraParam(String columnName, Object value) {
         this.extraParams.put(columnName, value);
         return this;
     }
@@ -77,14 +64,11 @@ public final class AppointmentBookingBuilder {
         AppointmentBooking appointmentBooking = new AppointmentBooking();
         appointmentBooking.setDueTimestamp(dueTimestamp);
         appointmentBooking.setPayload(payload);
-        appointmentBooking.setIssuerUid(issuerUid != null ? issuerUid : UUID_ZERO);
         appointmentBooking.setAppointmentUid(
                 appointmentUid != null ?
                         appointmentUid
-                        : UUIDType5.nameUUIDFromNamespaceAndString(
-                        appointmentBooking.getIssuerUid(),
-                        payload + "_" + dueTimestamp));
-        if(this.extraParams != null && !extraParams.isEmpty()){
+                        : UUIDType5.nameUUIDFromCustomString(payload + "_" + dueTimestamp));
+        if (this.extraParams != null && !extraParams.isEmpty()) {
             appointmentBooking.setExtraParams(this.extraParams);
         }
 

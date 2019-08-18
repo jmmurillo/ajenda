@@ -17,8 +17,10 @@ import java.util.concurrent.TimeUnit;
 
 public class AjendaScheduler<T extends Connection> implements ConnectionFactory<T> {
 
+    public static final String DEFAULT_SCHEMA_NAME = "public";
     private final ConnectionFactory<T> dataSource;
     private final String topic;
+    private final String schemaName;
     private final String tableName;
     private final int maxQueueSize;
     private final ScheduledThreadPoolExecutor executor;
@@ -28,8 +30,24 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
     private boolean ownClock = false;
     private AjendaBooker derivedBooker;
 
+    public AjendaScheduler(ConnectionFactory<T> dataSource, String topic, String customSchema) throws Exception {
+        this(dataSource, topic, new SyncedClock(dataSource), customSchema);
+        this.ownClock = true;
+    }
+
     public AjendaScheduler(ConnectionFactory<T> dataSource, String topic) throws Exception {
-        this(dataSource, topic, new SyncedClock(dataSource));
+        this(dataSource, topic, new SyncedClock(dataSource), DEFAULT_SCHEMA_NAME);
+        this.ownClock = true;
+    }
+
+    public AjendaScheduler(ConnectionFactory<T> dataSource, String topic, Clock clock, String customSchema) throws Exception {
+        this(
+                dataSource,
+                topic,
+                Runtime.getRuntime().availableProcessors(),
+                3 * Runtime.getRuntime().availableProcessors(),
+                clock,
+                customSchema);
     }
 
     public AjendaScheduler(ConnectionFactory<T> dataSource, String topic, Clock clock) throws Exception {
@@ -37,12 +55,13 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
                 dataSource,
                 topic,
                 Runtime.getRuntime().availableProcessors(),
-                3*Runtime.getRuntime().availableProcessors(),
-                clock);
+                3 * Runtime.getRuntime().availableProcessors(),
+                clock,
+                DEFAULT_SCHEMA_NAME);
     }
 
     public AjendaScheduler(ConnectionFactory<T> dataSource, String topic, int concurrencyLevel, int maxQueueSize) throws Exception {
-        this(dataSource, topic, concurrencyLevel, maxQueueSize, new SyncedClock(dataSource));
+        this(dataSource, topic, concurrencyLevel, maxQueueSize, new SyncedClock(dataSource), DEFAULT_SCHEMA_NAME);
         this.ownClock = true;
     }
 
@@ -53,21 +72,36 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
             int maxQueueSize,
             Clock clock
     ) throws Exception {
-        if(dataSource == null) throw new IllegalArgumentException("dataSource must not be null");
-        if(clock == null) throw new IllegalArgumentException("clock must not be null nor empty");
-        if(topic == null || topic.isEmpty()) throw new IllegalArgumentException("topic must not be empty");
-        if(concurrencyLevel <= 0) throw new IllegalArgumentException("concurrencyLevel must be greater than zero");
-        if(maxQueueSize <= 0) throw new IllegalArgumentException("maxQueueSize must be greater than zero");
+        this(dataSource, topic, concurrencyLevel, maxQueueSize, clock, DEFAULT_SCHEMA_NAME);
+    }
+    
+    public AjendaScheduler(
+            ConnectionFactory<T> dataSource,
+            String topic,
+            int concurrencyLevel,
+            int maxQueueSize,
+            Clock clock,
+            String schemaName
+    ) throws Exception {
+        if (dataSource == null) throw new IllegalArgumentException("dataSource must not be null");
+        if (clock == null) throw new IllegalArgumentException("clock must not be null");
+        if (topic == null || topic.isEmpty()) throw new IllegalArgumentException("topic must not be empty");
+        if (schemaName == null || schemaName.isEmpty())
+            throw new IllegalArgumentException("schema name must not be empty");
+        if (concurrencyLevel <= 0) throw new IllegalArgumentException("concurrencyLevel must be greater than zero");
+        if (maxQueueSize <= 0) throw new IllegalArgumentException("maxQueueSize must be greater than zero");
 
         this.dataSource = dataSource;
         this.clock = clock;
         this.topic = topic;
+        this.schemaName = schemaName;
         this.tableName = Common.getTableNameForTopic(topic);
-        InitializationModel.initTableForTopic(dataSource, topic);
+        InitializationModel.initTableForTopic(dataSource, topic, schemaName);
         this.maxQueueSize = maxQueueSize;
         this.executor = new ScheduledThreadPoolExecutor(concurrencyLevel, new ThreadPoolExecutor.DiscardPolicy());
+        
         this.poller = new ScheduledThreadPoolExecutor(1, new ThreadPoolExecutor.DiscardPolicy());
-        this.derivedBooker = new AjendaBooker(this){
+        this.derivedBooker = new AjendaBooker(this) {
             @Override
             public void shutdown(long gracePeriod) {
             }
@@ -91,8 +125,8 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
         return topic;
     }
 
-    public String getTableName() {
-        return tableName;
+    public String getTableNameWithSchema() {
+        return '\"' + schemaName + "\"." + tableName;
     }
 
     public int getMaxQueueSize() {
@@ -109,7 +143,7 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
         return executor;
     }
 
-    public AjendaBooker derivedBooker(){
+    public AjendaBooker derivedBooker() {
         return this.derivedBooker;
     }
 
@@ -121,11 +155,19 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
         return new CheckAgenda();
     }
 
+    public String getSchemaName() {
+        return schemaName;
+    }
+
+    public String getTableName() {
+        return tableName;
+    }
+
     public class CheckAgenda {
 
         private String customCondition;
 
-        public CheckAgenda withCustomSqlCondition(String customSqlCondition){
+        public CheckAgenda withCustomSqlCondition(String customSqlCondition) {
             this.customCondition = customSqlCondition;
             return this;
         }
@@ -158,22 +200,24 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
                     AjendaScheduler.this.clock.nowEpochMs(),
                     true,
                     reBookOnException,
+                    true,
                     listener,
                     customCondition);
         }
 
-        public void readAtLeastOnceAckEach(int limitSize, long timeout, SimpleAppointmentListener listener) throws Exception {
+        public void readAtLeastOnceAckEach(long timeout, SimpleAppointmentListener listener) throws Exception {
             AtLeastOnceAckEachModel.process(
                     AjendaScheduler.this,
                     0,
                     limitSize,
                     AjendaScheduler.this.clock.nowEpochMs(),
                     timeout,
+                    true,
                     listener,
                     customCondition);
         }
 
-        public void readAtLeastOnceAckJoin(int limitSize, long timeout, SimpleAppointmentListener listener) throws Exception {
+        public void readAtLeastOnceAckJoin(long timeout, SimpleAppointmentListener listener) throws Exception {
             AtLeastOnceAckJoinModel.process(
                     AjendaScheduler.this,
                     0,
@@ -185,7 +229,7 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
                     customCondition);
         }
 
-        public void readAtLeastOnceAtomic(int limitSize, SimpleAppointmentListener listener) throws Exception {
+        public void readAtLeastOnceAtomic(SimpleAppointmentListener listener) throws Exception {
             AtLeastOnceAtomicModel.process(
                     AjendaScheduler.this,
                     limitSize,
@@ -195,18 +239,19 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
         }
 
         //Connection In
-        public void readAtLeastOnceAckEach(int limitSize, long timeout, ConnectionInAppointmentListener listener) throws Exception {
+        public void readAtLeastOnceAckEach(long timeout, ConnectionInAppointmentListener listener) throws Exception {
             AtLeastOnceAckEachModel.process(
                     AjendaScheduler.this,
                     0,
                     limitSize,
                     AjendaScheduler.this.clock.nowEpochMs(),
                     timeout,
+                    true,
                     listener,
                     customCondition);
         }
 
-        public void readAtLeastOnceAtomic(int limitSize, ConnectionInAppointmentListener listener) throws Exception {
+        public void readAtLeastOnceAtomic(ConnectionInAppointmentListener listener) throws Exception {
             AtLeastOnceAtomicModel.process(
                     AjendaScheduler.this,
                     limitSize,
@@ -246,6 +291,7 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
                                     AjendaScheduler.this.clock.nowEpochMs(),
                                     onlyLate,
                                     reBookOnException,
+                                    false,
                                     listener,
                                     customCondition);
                         } catch (Exception e) {
@@ -273,6 +319,7 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
                                     limitSize,
                                     AjendaScheduler.this.clock.nowEpochMs(),
                                     timeout,
+                                    false,
                                     listener,
                                     customCondition);
                         } catch (Exception e) {
@@ -354,6 +401,7 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
                                     limitSize,
                                     AjendaScheduler.this.clock.nowEpochMs(),
                                     timeout,
+                                    false,
                                     listener,
                                     customCondition);
                         } catch (Exception e) {
@@ -393,17 +441,17 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
         }
 
     }
-
-    public int remainingSlots(){
+    
+    public int remainingSlots() {
         return idleThreads() + queueFreeSlots();
     }
 
-    public int idleThreads(){
+    public int idleThreads() {
         return this.executor.getCorePoolSize() - this.executor.getActiveCount();
     }
 
-    public int queueFreeSlots(){
+    public int queueFreeSlots() {
         return this.maxQueueSize - this.executor.getQueue().size();
     }
-
+    
 }

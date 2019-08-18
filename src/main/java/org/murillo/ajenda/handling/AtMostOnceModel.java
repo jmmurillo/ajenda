@@ -12,6 +12,7 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 import static org.murillo.ajenda.handling.Utils.extractAppointmentDue;
@@ -28,13 +29,13 @@ public class AtMostOnceModel {
                     + "WHERE uuid = any(array("
                     + "  SELECT uuid "
                     + "  FROM %s "
-                    + "  WHERE due_date < ? "
-                    + "    AND expiry_date < ? "
+                    + "  WHERE due_date <= ? "
+                    + "    AND expiry_date <= ? "
                     + "    AND %s "  //CUSTOM CONDITION
                     + "  ORDER BY due_date, expiry_date ASC "
                     + "  FETCH FIRST ? ROWS ONLY "
                     + "  FOR UPDATE SKIP LOCKED "
-                    + ")) RETURNING *;";
+                    + ")) RETURNING *";
 
     public static void process(
             AjendaScheduler ajendaScheduler,
@@ -43,6 +44,7 @@ public class AtMostOnceModel {
             long nowEpoch,
             boolean onlyLate,
             boolean reBookOnException,
+            boolean blocking,
             SimpleAppointmentListener listener,
             String customSqlCondition
     ) throws Exception {
@@ -53,6 +55,7 @@ public class AtMostOnceModel {
                     ajendaScheduler,
                     nowEpoch,
                     reBookOnException,
+                    blocking,
                     listener,
                     selectAndDelete(ajendaScheduler, pollPeriod, minSize, nowEpoch, onlyLate, customSqlCondition)
             );
@@ -63,38 +66,49 @@ public class AtMostOnceModel {
             AjendaScheduler ajendaScheduler,
             long nowEpoch,
             boolean reBookOnException,
+            boolean blocking,
             SimpleAppointmentListener listener,
-            List<AppointmentDue> appointments) {
-
-        for (AppointmentDue appointmentDue : appointments) {
-            long delay = appointmentDue.getDueTimestamp() - nowEpoch;
-            try {
-                ajendaScheduler.getExecutor()
-                        .schedule(() -> {
-                                    try {
-                                        listener.receive(appointmentDue);
-                                    } catch (UnhandledAppointmentException ex) {
-                                        if (reBookOnException) {
-                                            reBook(ajendaScheduler, appointmentDue);
+            List<AppointmentDue> appointments) throws InterruptedException {
+        Semaphore semaphore = blocking ?
+                new Semaphore(0)
+                : null;
+        int scheduled = 0;
+        try {
+            for (AppointmentDue appointmentDue : appointments) {
+                long delay = appointmentDue.getDueTimestamp() - nowEpoch;
+                try {
+                    ajendaScheduler.getExecutor()
+                            .schedule(() -> {
+                                        try {
+                                            listener.receive(appointmentDue);
+                                        } catch (UnhandledAppointmentException ex) {
+                                            if (reBookOnException) {
+                                                reBook(ajendaScheduler, appointmentDue);
+                                            }
+                                            //TODO log
+                                            return;
+                                        } catch (Throwable th) {
+                                            th.printStackTrace();
+                                            if (reBookOnException) {
+                                                reBook(ajendaScheduler, appointmentDue);
+                                            }
+                                            //TODO log
+                                            return;
+                                        } finally {
+                                            if (blocking) semaphore.release();
                                         }
-                                        //TODO log
-                                        return;
-                                    } catch (Throwable th) {
-                                        th.printStackTrace();
-                                        if (reBookOnException) {
-                                            reBook(ajendaScheduler, appointmentDue);
-                                        }
-                                        //TODO log
-                                        return;
-                                    }
-                                },
-                                delay > 0 ? delay : 0,
-                                TimeUnit.MILLISECONDS);
-            } catch (RejectedExecutionException ex) {
-                //TODO log
-                //TODO call handler in another thread
-                ex.printStackTrace();
+                                    },
+                                    delay > 0 ? delay : 0,
+                                    TimeUnit.MILLISECONDS);
+                    scheduled++;
+                } catch (RejectedExecutionException ex) {
+                    //TODO log
+                    //TODO call handler in another thread
+                    ex.printStackTrace();
+                }
             }
+        } finally {
+            if (blocking) semaphore.acquire(scheduled);
         }
     }
 
@@ -109,12 +123,13 @@ public class AtMostOnceModel {
             });
         }
         try {
-            BookModel.book(
-                    ajendaScheduler.getTableName(),
+            BookModel.rebook(
+                    ajendaScheduler.getTableNameWithSchema(),
                     ajendaScheduler,
                     ajendaScheduler.getClock(),
                     builder.build(),
-                    appointmentDue.getAttempts() + 1
+                    appointmentDue.getAttempts() + 1,
+                    appointmentDue.getPeriodicAppointmentUid()
             );
         } catch (Throwable th1) {
             //TODO log
@@ -130,7 +145,7 @@ public class AtMostOnceModel {
             boolean onlyLate,
             String customSqlCondition) throws Exception {
 
-        String tableName = ajendaScheduler.getTableName();
+        String tableName = ajendaScheduler.getTableNameWithSchema();
         long limitDueDate = onlyLate ? nowEpoch : nowEpoch + pollPeriod;
 
         String sql = String.format(

@@ -6,7 +6,6 @@ import java.util.UUID;
 public class AppointmentBooking {
 
     private UUID appointmentUid;
-    private UUID issuerUid;
     private long dueTimestamp;
     private String payload;
     private HashMap<String, Object> extraParams;
@@ -19,14 +18,6 @@ public class AppointmentBooking {
 
     void setAppointmentUid(UUID appointmentUid) {
         this.appointmentUid = appointmentUid;
-    }
-
-    public UUID getIssuerUid() {
-        return issuerUid;
-    }
-
-    void setIssuerUid(UUID issuerUid) {
-        this.issuerUid = issuerUid;
     }
 
     public long getDueTimestamp() {

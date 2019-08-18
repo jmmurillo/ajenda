@@ -32,13 +32,13 @@ public class AtLeastOnceAckJoinModel {
                     + "WHERE uuid = any(array("
                     + "  SELECT uuid "
                     + "  FROM %s "
-                    + "  WHERE due_date < ? "
-                    + "    AND expiry_date < ? "
+                    + "  WHERE due_date <= ? "
+                    + "    AND expiry_date <= ? "
                     + "    AND %s "  //CUSTOM CONDITION
                     + "  ORDER BY due_date, expiry_date ASC "
                     + "  FETCH FIRST ? ROWS ONLY "
                     + "  FOR UPDATE SKIP LOCKED "
-                    + ")) RETURNING *;";
+                    + ")) RETURNING *";
 
     private static final String ACK_MULTIPLE_QUERY =
             "DELETE "
@@ -69,6 +69,8 @@ public class AtLeastOnceAckJoinModel {
         //Join timed tasks
         try {
             joinAck.join();
+        } catch (InterruptedException e) {
+            throw e;
         } catch (Exception e) {
             //TODO Log
             //TODO free or ignore until expiration
@@ -83,7 +85,7 @@ public class AtLeastOnceAckJoinModel {
             SimpleAppointmentListener listener,
             List<AppointmentDue> appointments) {
 
-        String tableName = ajendaScheduler.getTableName();
+        String tableName = ajendaScheduler.getTableNameWithSchema();
         JoinAck joinAck = new JoinAck(ajendaScheduler, appointments.size());
         try {
             for (AppointmentDue a : appointments) {
@@ -154,7 +156,7 @@ public class AtLeastOnceAckJoinModel {
             try (Connection conn = ajendaScheduler.getConnection()) {
                 String questionMarks = String.join(",",
                         toAck.stream().map(x -> "?").collect(Collectors.toList()));
-                String sql = String.format(ACK_MULTIPLE_QUERY, ajendaScheduler.getTableName(), questionMarks);
+                String sql = String.format(ACK_MULTIPLE_QUERY, ajendaScheduler.getTableNameWithSchema(), questionMarks);
                 try (PreparedStatement stmt = conn.prepareStatement(sql)) {
                     int i = 1;
                     for (UUID uid : toAck) {
@@ -176,7 +178,7 @@ public class AtLeastOnceAckJoinModel {
             boolean onlyLate,
             String customSqlCondition) throws Exception {
 
-        String tableName = ajendaScheduler.getTableName();
+        String tableName = ajendaScheduler.getTableNameWithSchema();
         long limitDueDate = onlyLate ? nowEpoch : nowEpoch + pollPeriod;
 
         String sql = String.format(

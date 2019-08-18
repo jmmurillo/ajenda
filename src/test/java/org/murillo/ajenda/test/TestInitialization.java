@@ -31,9 +31,9 @@ public class TestInitialization {
 
         AjendaBooker booker = new AjendaBooker(
                 dataSource,
+                topic,
                 new Clock() {
-                },
-                topic);
+                });
 
         Assert.assertTrue(TestUtils.doesTableExist(dataSource, tableName));
         Assert.assertThat(
@@ -67,9 +67,9 @@ public class TestInitialization {
         try {
             AjendaBooker booker = new AjendaBooker(
                     dataSource,
+                    topic,
                     new Clock() {
-                    },
-                    topic);
+                    });
             Assert.fail("An exception should have been thrown");
         } catch (IllegalStateException e) {
             Assert.assertEquals(
@@ -95,7 +95,8 @@ public class TestInitialization {
                         + "due_date         BIGINT, "
                         + "expiry_date      BIGINT, "
                         + "attempts         INTEGER, "
-                        + "payload          TEXT )";
+                        + "payload          TEXT,"
+                        + "periodic_uuid             UUID)";
 
         try (Connection conn = dataSource.getConnection()) {
             String createTableSql = String.format(
@@ -111,9 +112,9 @@ public class TestInitialization {
 
         AjendaBooker booker = new AjendaBooker(
                 dataSource,
+                topic,
                 new Clock() {
-                },
-                topic);
+                });
 
         Assert.assertThat(
                 TestUtils.getColumnNamesForTable(dataSource, tableName),

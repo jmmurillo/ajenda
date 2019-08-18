@@ -27,13 +27,13 @@ public class AtLeastOnceAtomicModel {
                     + "WHERE uuid = any(array("
                     + "  SELECT uuid "
                     + "  FROM %s "
-                    + "  WHERE due_date < ? "
-                    + "    AND expiry_date < ? "
+                    + "  WHERE due_date <= ? "
+                    + "    AND expiry_date <= ? "
                     + "    AND %s "  //CUSTOM CONDITION
                     + "  ORDER BY due_date, expiry_date ASC "
                     + "  FETCH FIRST ? ROWS ONLY "
                     + "  FOR UPDATE SKIP LOCKED "
-                    + ")) RETURNING *;";
+                    + ")) RETURNING *";
 
     public static void process(
             AjendaScheduler ajendaScheduler,
@@ -66,7 +66,7 @@ public class AtLeastOnceAtomicModel {
             SimpleAppointmentListener listener,
             String customSqlCondition) throws Exception {
 
-        String tableName = ajendaScheduler.getTableName();
+        String tableName = ajendaScheduler.getTableNameWithSchema();
         //Take only late tasks, so execution should wait less
         long limitDueDate = nowEpoch;
 
@@ -126,7 +126,7 @@ public class AtLeastOnceAtomicModel {
             ConnectionInAppointmentListener listener,
             String customSqlCondition) throws Exception {
 
-        String tableName = ajendaScheduler.getTableName();
+        String tableName = ajendaScheduler.getTableNameWithSchema();
         //Take only late tasks, so execution should wait less
         long limitDueDate = nowEpoch;
 
