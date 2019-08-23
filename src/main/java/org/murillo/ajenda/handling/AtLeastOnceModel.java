@@ -1,6 +1,7 @@
 package org.murillo.ajenda.handling;
 
 import org.murillo.ajenda.booking.AjendaBooker;
+import org.murillo.ajenda.booking.BookModel;
 import org.murillo.ajenda.dto.AppointmentDue;
 import org.murillo.ajenda.dto.ConnectionInAppointmentListener;
 import org.murillo.ajenda.dto.SimpleAppointmentListener;
@@ -11,13 +12,12 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 import static org.murillo.ajenda.handling.Utils.extractAppointmentDue;
 
-public class AtLeastOnceAckEachModel {
+public class AtLeastOnceModel {
 
     //AT_LEAST_ONCE_ACKED_QUERY
     //COMMIT
@@ -124,7 +124,7 @@ public class AtLeastOnceAckEachModel {
                                 ackIndividually(
                                         ajendaScheduler,
                                         tableName,
-                                        a.getAppointmentUid());
+                                        a);
                             } catch (Throwable th) {
                                 //TODO log
                                 th.printStackTrace();
@@ -181,12 +181,18 @@ public class AtLeastOnceAckEachModel {
         }
     }
 
-    private static void ackIndividually(AjendaScheduler ajendaScheduler, String tableName, UUID uid) throws Exception {
+    private static void ackIndividually(AjendaScheduler ajendaScheduler, String tableName, AppointmentDue appointmentDue) throws Exception {
         try (Connection conn = ajendaScheduler.getConnection()) {
             String sql = String.format(ACK_ONE_QUERY, tableName);
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                stmt.setObject(1, uid);
+                stmt.setObject(1, appointmentDue.getAppointmentUid());
                 stmt.execute();
+                BookModel.bookNextIteration(
+                        appointmentDue,
+                        ajendaScheduler.getTableNameWithSchema(),
+                        ajendaScheduler.getPeriodicTableNameWithSchema(),
+                        conn,
+                        ajendaScheduler.getClock().nowEpochMs());                
                 conn.commit();
             }
         }
@@ -202,6 +208,12 @@ public class AtLeastOnceAckEachModel {
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
                 stmt.setObject(1, appointmentDue.getAppointmentUid());
                 stmt.execute();
+                BookModel.bookNextIteration(
+                        appointmentDue,
+                        ajendaScheduler.getTableNameWithSchema(),
+                        ajendaScheduler.getPeriodicTableNameWithSchema(),
+                        conn,
+                        ajendaScheduler.getClock().nowEpochMs());
             }
             try {
                 listener.receive(appointmentDue, new AjendaBooker(ajendaScheduler) {

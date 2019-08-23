@@ -52,16 +52,6 @@ public class BookModel<T extends Connection> {
             Clock clock,
             AppointmentBooking booking,
             int previousAttempts) throws Exception {
-        rebook(tableName, connectionFactory, clock, booking, previousAttempts, null);
-    }
-    
-    public static void rebook(
-            String tableName,
-            ConnectionFactory<?> connectionFactory,
-            Clock clock,
-            AppointmentBooking booking,
-            int previousAttempts,
-            UUID periodicUid) throws Exception {
 
         ArrayList<Map.Entry<String, ?>> extraColumnsList;
         if (booking.getExtraParams() != null) {
@@ -97,11 +87,7 @@ public class BookModel<T extends Connection> {
                 //expiry stmt.setLong(place++, -1L);
                 stmt.setInt(place++, previousAttempts);
                 stmt.setString(place++, booking.getPayload());
-                if(periodicUid != null){
-                    stmt.setObject(place++, periodicUid);
-                }else{
-                    stmt.setNull(place++, Types.NULL);
-                }
+                stmt.setNull(place++, Types.NULL);
 
                 //FOR UPDATE
                 stmt.setObject(place++, booking.getAppointmentUid());
@@ -110,11 +96,7 @@ public class BookModel<T extends Connection> {
                 //expiry stmt.setLong(place++, -1L);
                 stmt.setInt(place++, previousAttempts);
                 stmt.setString(place++, booking.getPayload());
-                if(periodicUid != null){
-                    stmt.setObject(place++, periodicUid);
-                }else{
-                    stmt.setNull(place++, Types.NULL);
-                }
+                stmt.setNull(place++, Types.NULL);
 
                 if (extraColumnsList != null) {
                     for (int i = 0; i < extraColumnsList.size(); i++) {
@@ -188,14 +170,6 @@ public class BookModel<T extends Connection> {
                 stmt.setString(place++, periodicBooking.getPayload());
                 stmt.setBoolean(place++, periodicBooking.isSkipMissed());
 
-                //FOR UPDATE
-                stmt.setObject(place++, periodicBooking.getAppointmentUid());
-                stmt.setLong(place++, nowEpochMs);
-                stmt.setInt(place++, periodicBooking.getPatternType().getId());
-                stmt.setString(place++, periodicBooking.getPattern());
-                stmt.setString(place++, periodicBooking.getPayload());
-                stmt.setBoolean(place++, periodicBooking.isSkipMissed());
-
                 if (extraColumnsList != null) {
                     for (int i = 0; i < extraColumnsList.size(); i++) {
                         Object value = extraColumnsList.get(i).getValue();
@@ -216,13 +190,22 @@ public class BookModel<T extends Connection> {
             try (PreparedStatement stmt = conn.prepareStatement(bookSql)) {
 
                 int place = 1;
+                //FOR INSERT
                 stmt.setObject(place++, iterationUid);
                 stmt.setLong(place++, nowEpochMs);
                 stmt.setLong(place++, firstDueTimestamp);
-                //expiry stmt.setLong(place++, -1L);
                 stmt.setInt(place++, previousAttempts);
                 stmt.setString(place++, periodicBooking.getPayload());
                 stmt.setObject(place++, periodicBooking.getAppointmentUid());
+
+                //FOR UPDATE
+                stmt.setObject(place++, iterationUid);
+                stmt.setLong(place++, nowEpochMs);
+                stmt.setLong(place++, firstDueTimestamp);
+                stmt.setInt(place++, previousAttempts);
+                stmt.setString(place++, periodicBooking.getPayload());
+                stmt.setObject(place++, periodicBooking.getAppointmentUid());
+                
                 if (extraColumnsList != null) {
                     for (int i = 0; i < extraColumnsList.size(); i++) {
                         Object value = extraColumnsList.get(i).getValue();
@@ -239,22 +222,23 @@ public class BookModel<T extends Connection> {
         }
     }
 
-    private void queueNextIteration(
+    public static void bookNextIteration(
             AppointmentDue appointmentDue,
             String tableName,
             String periodicTableName,
             Connection conn,
-            Clock clock) throws Exception {
+            long nowEpochMs) throws Exception {
 
-        if (appointmentDue.getAppointmentUid() != null) {
+        if (appointmentDue.getPeriodicAppointmentUid() != null) {
             PeriodicAppointmentBooking periodic = null;
             String getPeriodic = String.format(
                     PERIODIC_BOOK_SELECT_QUERY,
                     periodicTableName
             );
-
-
+            
             try (PreparedStatement stmt = conn.prepareStatement(getPeriodic)) {
+                
+                stmt.setObject(1, appointmentDue.getPeriodicAppointmentUid());
                 ResultSet resultSet = stmt.executeQuery();
                 if (resultSet.next()) {
                     periodic = Utils.extractPeriodicAppointment(resultSet);
@@ -279,7 +263,6 @@ public class BookModel<T extends Connection> {
                         extraColumnsNames,
                         extraColumnsQuestionMarks
                 );
-                long nowEpochMs = clock.nowEpochMs();
                 try (PreparedStatement stmt = conn.prepareStatement(bookSql)) {
                     int place = 1;
 
@@ -292,7 +275,7 @@ public class BookModel<T extends Connection> {
                     UUID iterationUid = UUIDType5.nameUUIDFromCustomString(
                             periodic.getAppointmentUid()
                                     + "_" + dueTimestamp);
-
+                    
                     //FOR INSERT
                     stmt.setObject(place++, iterationUid);
                     stmt.setLong(place++, nowEpochMs);
@@ -300,7 +283,7 @@ public class BookModel<T extends Connection> {
                     stmt.setInt(place++, 0);
                     stmt.setString(place++, periodic.getPayload());
                     stmt.setObject(place++, periodic.getAppointmentUid());
-                    
+
                     //FOR UPDATE
                     stmt.setObject(place++, iterationUid);
                     stmt.setLong(place++, nowEpochMs);
@@ -372,7 +355,10 @@ public class BookModel<T extends Connection> {
         if (booking.getPatternType() == PeriodicPatternType.FIXED_RATE) {
             long rate = Long.parseLong(booking.getPattern());
             if (booking.isSkipMissed()) {
-                return previousDueDate + Math.round(0.5 + (nowEpochMs - previousDueDate) / (double) rate) * rate;
+                return previousDueDate +
+                Math.max(1L,        
+                        Math.round(0.5 + (nowEpochMs - previousDueDate) / (double) rate))
+                        * rate;
             } else {
                 return previousDueDate + rate;
             }

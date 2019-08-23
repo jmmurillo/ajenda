@@ -7,9 +7,7 @@ import org.junit.Before;
 import org.junit.ClassRule;
 import org.murillo.ajenda.booking.AjendaBooker;
 import org.murillo.ajenda.common.Clock;
-import org.murillo.ajenda.dto.AppointmentBookingBuilder;
-import org.murillo.ajenda.dto.AppointmentDue;
-import org.murillo.ajenda.dto.UnhandledAppointmentException;
+import org.murillo.ajenda.dto.*;
 import org.murillo.ajenda.handling.AjendaScheduler;
 import org.murillo.ajenda.test.utils.TestDataSource;
 
@@ -28,9 +26,12 @@ public class TestAtMostOnce {
     @ClassRule
     public static SingleInstancePostgresRule pg = EmbeddedPostgresRules.singleInstance();
 
+    public TestDataSource dataSource;
+    
     @Before
     public void clearDB() throws SQLException {
-        try (Connection connection = pg.getEmbeddedPostgres().getPostgresDatabase().getConnection()) {
+        dataSource = new TestDataSource(pg.getEmbeddedPostgres().getPostgresDatabase());
+        try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(false);
             try (Statement statement = connection.createStatement()) {
                 statement.execute("DO $$ DECLARE "
@@ -49,8 +50,6 @@ public class TestAtMostOnce {
     public void test_simple_book_and_handle() throws Exception {
         String topic = "prueba";
         String payload = UUID.randomUUID().toString();
-        TestDataSource dataSource = new TestDataSource(
-                pg.getEmbeddedPostgres().getPostgresDatabase());
 
         simpleBookAppointment(topic, payload, dataSource);
 
@@ -61,14 +60,14 @@ public class TestAtMostOnce {
                 });
 
         ArrayList<AppointmentDue> read = new ArrayList<>();
-        scheduler.checkAgenda().once(10).readAtMostOnce(false, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtMostOnce(false, appointmentDue -> {
             read.add(appointmentDue);
         });
 
         Assert.assertEquals(1, read.size());
         Assert.assertEquals(payload, read.get(0).getPayload());
 
-        scheduler.checkAgenda().once(10).readAtMostOnce(false, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtMostOnce(false, appointmentDue -> {
             read.add(appointmentDue);
         });
         Assert.assertEquals(1, read.size());
@@ -78,8 +77,6 @@ public class TestAtMostOnce {
     public void test_simple_book_and_handle_rebook() throws Exception {
         String topic = "prueba";
         String payload = UUID.randomUUID().toString();
-        TestDataSource dataSource = new TestDataSource(
-                pg.getEmbeddedPostgres().getPostgresDatabase());
 
         simpleBookAppointment(topic, payload, dataSource);
 
@@ -90,21 +87,21 @@ public class TestAtMostOnce {
                 });
 
         ArrayList<AppointmentDue> read = new ArrayList<>();
-        scheduler.checkAgenda().once(10).readAtMostOnce(true, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtMostOnce(true, appointmentDue -> {
             read.add(appointmentDue);
             throw new UnhandledAppointmentException();
         });
 
         Assert.assertEquals(1, read.size());
 
-        scheduler.checkAgenda().once(10).readAtMostOnce(false, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtMostOnce(false, appointmentDue -> {
             read.add(appointmentDue);
             throw new UnhandledAppointmentException();
         });
 
         Assert.assertEquals(2, read.size());
 
-        scheduler.checkAgenda().once(10).readAtMostOnce(false, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtMostOnce(false, appointmentDue -> {
             read.add(appointmentDue);
             throw new UnhandledAppointmentException();
         });
@@ -118,8 +115,6 @@ public class TestAtMostOnce {
     public void test_multiple_book_and_handle() throws Exception {
         String topic = "prueba";
         List<String> payloads = IntStream.range(0, 19).mapToObj(i -> String.valueOf(i)).collect(Collectors.toList());
-        TestDataSource dataSource = new TestDataSource(
-                pg.getEmbeddedPostgres().getPostgresDatabase());
 
         simpleBookAppointment(topic, payloads, dataSource);
 
@@ -132,11 +127,11 @@ public class TestAtMostOnce {
                 });
 
         ArrayList<AppointmentDue> read = new ArrayList<>();
-        scheduler.checkAgenda().once(10).readAtMostOnce(false, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtMostOnce(false, appointmentDue -> {
             read.add(appointmentDue);
         });
         Assert.assertEquals(10, read.size());
-        scheduler.checkAgenda().once(10).readAtMostOnce(false, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtMostOnce(false, appointmentDue -> {
             read.add(appointmentDue);
         });
         Assert.assertEquals(19, read.size());
@@ -149,8 +144,6 @@ public class TestAtMostOnce {
     @org.junit.Test
     public void test_delayed_book_and_handle() throws Exception {
         String topic = "prueba";
-        TestDataSource dataSource = new TestDataSource(
-                pg.getEmbeddedPostgres().getPostgresDatabase());
 
         AtomicLong time = new AtomicLong(0L);
 
@@ -182,17 +175,54 @@ public class TestAtMostOnce {
                 clock);
 
         ArrayList<AppointmentDue> read = new ArrayList<>();
-        scheduler.checkAgenda().once(10).readAtMostOnce(false, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtMostOnce(false, appointmentDue -> {
             read.add(appointmentDue);
         });
         Assert.assertEquals(0, read.size());
 
         time.set(2L);
 
-        scheduler.checkAgenda().once(10).readAtMostOnce(false, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtMostOnce(false, appointmentDue -> {
             read.add(appointmentDue);
         });
         Assert.assertEquals(2, read.size());
+    }
+
+    @org.junit.Test
+    public void test_periodic_appointment() throws Exception {
+        String topic = "prueba";
+        String payload = UUID.randomUUID().toString();
+
+        AjendaBooker booker = new AjendaBooker(
+                dataSource,
+                topic,
+                new Clock() {
+                });
+        
+        AjendaScheduler scheduler = new AjendaScheduler(
+                dataSource,
+                topic,
+                new Clock() {
+                });
+
+        long t = System.currentTimeMillis();
+        ArrayList<AppointmentDue> read = new ArrayList<>();
+        scheduler.checkAgenda().withFetchSize(10).periodically(100)
+                .readAtMostOnce(false, false, e -> {
+                    read.add(e);
+                });
+
+        booker.bookAppointment(
+                PeriodicAppointmentBookingBuilder.aPeriodicBooking()
+                        .withFixedPeriod(500, PeriodicPatternType.FIXED_RATE)
+                        .withPayload(payload)
+                        .build());        
+        
+        Thread.sleep(4750);
+        scheduler.shutdown(0);
+        
+        Assert.assertEquals(10, read.size());
+
     }
 
     private void simpleBookAppointment(String topic, String payload, TestDataSource dataSource) throws Exception {

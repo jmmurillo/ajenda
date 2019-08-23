@@ -10,10 +10,10 @@ import org.murillo.ajenda.dto.SimpleAppointmentListener;
 import org.murillo.ajenda.utils.Common;
 
 import java.sql.Connection;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
+
+import static org.murillo.ajenda.utils.Common.getPeriodicTableNameForTopic;
 
 public class AjendaScheduler<T extends Connection> implements ConnectionFactory<T> {
 
@@ -22,6 +22,7 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
     private final String topic;
     private final String schemaName;
     private final String tableName;
+    private final String periodicTableName;
     private final int maxQueueSize;
     private final ScheduledThreadPoolExecutor executor;
     private final ScheduledThreadPoolExecutor poller;
@@ -74,7 +75,7 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
     ) throws Exception {
         this(dataSource, topic, concurrencyLevel, maxQueueSize, clock, DEFAULT_SCHEMA_NAME);
     }
-    
+
     public AjendaScheduler(
             ConnectionFactory<T> dataSource,
             String topic,
@@ -96,10 +97,11 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
         this.topic = topic;
         this.schemaName = schemaName;
         this.tableName = Common.getTableNameForTopic(topic);
-        InitializationModel.initTableForTopic(dataSource, topic, schemaName);
+        this.periodicTableName = getPeriodicTableNameForTopic(topic);
+        InitializationModel.initTableForTopic(dataSource, topic, schemaName, tableName, periodicTableName);
         this.maxQueueSize = maxQueueSize;
         this.executor = new ScheduledThreadPoolExecutor(concurrencyLevel, new ThreadPoolExecutor.DiscardPolicy());
-        
+
         this.poller = new ScheduledThreadPoolExecutor(1, new ThreadPoolExecutor.DiscardPolicy());
         this.derivedBooker = new AjendaBooker(this) {
             @Override
@@ -127,6 +129,10 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
 
     public String getTableNameWithSchema() {
         return '\"' + schemaName + "\"." + tableName;
+    }
+
+    public String getPeriodicTableNameWithSchema() {
+        return '\"' + schemaName + "\"." + periodicTableName;
     }
 
     public int getMaxQueueSize() {
@@ -163,21 +169,35 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
         return tableName;
     }
 
+    public String getPeriodicTableName() {
+        return periodicTableName;
+    }
+
     public class CheckAgenda {
 
         private String customCondition;
+        private int fetchSize = 1;
 
         public CheckAgenda withCustomSqlCondition(String customSqlCondition) {
             this.customCondition = customSqlCondition;
             return this;
         }
 
-        public CheckAgendaOnce once(int limitSize) {
-            return new CheckAgendaOnce(limitSize, this.customCondition);
+        public CheckAgenda withFetchSize(int fetchSize) {
+            this.fetchSize = fetchSize;
+            return this;
         }
 
-        public CheckAgendaPeriodically periodically(int limitSize, long pollPeriodMs) {
-            return new CheckAgendaPeriodically(limitSize, pollPeriodMs, this.customCondition);
+        public CheckAgendaOnce once() {
+            return new CheckAgendaOnce(fetchSize, this.customCondition);
+        }
+
+        public CheckAgendaPeriodically periodically(long pollPeriodMs) {
+            return new CheckAgendaPeriodically(fetchSize, pollPeriodMs, 0, this.customCondition);
+        }
+
+        public CheckAgendaPeriodically periodically(long meanPollPeriodMs, long periodDeviationMs) {
+            return new CheckAgendaPeriodically(fetchSize, meanPollPeriodMs, periodDeviationMs, this.customCondition);
         }
 
     }
@@ -205,57 +225,27 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
                     customCondition);
         }
 
-        public void readAtLeastOnceAckEach(long timeout, SimpleAppointmentListener listener) throws Exception {
-            AtLeastOnceAckEachModel.process(
+        public void readAtLeastOnce(long timeout, SimpleAppointmentListener listener) throws Exception {
+            AtLeastOnceModel.process(
                     AjendaScheduler.this,
                     0,
                     limitSize,
                     AjendaScheduler.this.clock.nowEpochMs(),
                     timeout,
                     true,
-                    listener,
-                    customCondition);
-        }
-
-        public void readAtLeastOnceAckJoin(long timeout, SimpleAppointmentListener listener) throws Exception {
-            AtLeastOnceAckJoinModel.process(
-                    AjendaScheduler.this,
-                    0,
-                    limitSize,
-                    AjendaScheduler.this.clock.nowEpochMs(),
-                    timeout,
-                    true,
-                    listener,
-                    customCondition);
-        }
-
-        public void readAtLeastOnceAtomic(SimpleAppointmentListener listener) throws Exception {
-            AtLeastOnceAtomicModel.process(
-                    AjendaScheduler.this,
-                    limitSize,
-                    AjendaScheduler.this.clock.nowEpochMs(),
                     listener,
                     customCondition);
         }
 
         //Connection In
-        public void readAtLeastOnceAckEach(long timeout, ConnectionInAppointmentListener listener) throws Exception {
-            AtLeastOnceAckEachModel.process(
+        public void readAtLeastOnce(long timeout, ConnectionInAppointmentListener listener) throws Exception {
+            AtLeastOnceModel.process(
                     AjendaScheduler.this,
                     0,
                     limitSize,
                     AjendaScheduler.this.clock.nowEpochMs(),
                     timeout,
                     true,
-                    listener,
-                    customCondition);
-        }
-
-        public void readAtLeastOnceAtomic(ConnectionInAppointmentListener listener) throws Exception {
-            AtLeastOnceAtomicModel.process(
-                    AjendaScheduler.this,
-                    limitSize,
-                    AjendaScheduler.this.clock.nowEpochMs(),
                     listener,
                     customCondition);
         }
@@ -265,14 +255,20 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
 
         private int limitSize;
         private long pollPeriodMs;
+        private long periodDeviationMs;
         private String customCondition;
         //TODO Hacer posible parar y cambiar el periodo
 
-        public CheckAgendaPeriodically(int limitSize, long pollPeriodMs, String customCondition) {
-            if (limitSize < 1) throw new IllegalArgumentException("limitSize must be greater than zero");
+        public CheckAgendaPeriodically(int limitSize, long pollPeriodMs, long periodDeviationMs, String customCondition) {
+            if (limitSize < 1) throw new IllegalArgumentException("fetchSize must be greater than zero");
             this.limitSize = limitSize;
             if (pollPeriodMs < 1) throw new IllegalArgumentException("pollPeriodMs must be greater than zero");
+            if (periodDeviationMs < 0) throw new IllegalArgumentException("periodDeviationMs must not be negative");
+            if (periodDeviationMs > pollPeriodMs)
+                throw new IllegalArgumentException("periodDeviationMs must not be greater than pollPeriodMs");
+
             this.pollPeriodMs = pollPeriodMs;
+            this.periodDeviationMs = periodDeviationMs;
             this.customCondition = customCondition;
         }
 
@@ -282,166 +278,177 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
                 remainingDelay = AjendaScheduler.this.pollerScheduledFuture.getDelay(TimeUnit.MILLISECONDS);
                 AjendaScheduler.this.pollerScheduledFuture.cancel(false);
             }
-            AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleAtFixedRate(() -> {
-                        try {
-                            AtMostOnceModel.process(
-                                    AjendaScheduler.this,
-                                    pollPeriodMs,
-                                    limitSize,
-                                    AjendaScheduler.this.clock.nowEpochMs(),
-                                    onlyLate,
-                                    reBookOnException,
-                                    false,
-                                    listener,
-                                    customCondition);
-                        } catch (Exception e) {
-                            //TODO
-                            e.printStackTrace();
-                        }
-                    },
-                    remainingDelay,
-                    pollPeriodMs,
-                    TimeUnit.MILLISECONDS
-            );
+            if (this.periodDeviationMs > 0) {
+                long minimumPeriod = pollPeriodMs - periodDeviationMs;
+                AtomicLong currentSleep = new AtomicLong(0);
+                AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleWithFixedDelay(() -> {
+                            try {
+                                long nextSleep = ThreadLocalRandom.current()
+                                        .nextLong(0, 2 * periodDeviationMs);
+                                Thread.sleep(currentSleep.getAndSet(nextSleep));
+                                AtMostOnceModel.process(
+                                        AjendaScheduler.this,
+                                        minimumPeriod + nextSleep,
+                                        limitSize,
+                                        AjendaScheduler.this.clock.nowEpochMs(),
+                                        onlyLate,
+                                        reBookOnException,
+                                        false,
+                                        listener,
+                                        customCondition);
+                            } catch (Throwable th) {
+                                //TODO
+                                //Show must go on
+                                th.printStackTrace();
+                            }
+                        },
+                        remainingDelay,
+                        minimumPeriod,
+                        TimeUnit.MILLISECONDS
+                );
+            } else {
+                AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleAtFixedRate(() -> {
+                            try {
+                                AtMostOnceModel.process(
+                                        AjendaScheduler.this,
+                                        pollPeriodMs,
+                                        limitSize,
+                                        AjendaScheduler.this.clock.nowEpochMs(),
+                                        onlyLate,
+                                        reBookOnException,
+                                        false,
+                                        listener,
+                                        customCondition);
+                            } catch (Throwable th) {
+                                //TODO
+                                //Show must go on
+                                th.printStackTrace();
+                            }
+                        },
+                        remainingDelay,
+                        pollPeriodMs,
+                        TimeUnit.MILLISECONDS
+                );
+            }
         }
 
-        public void readAtLeastOnceAckEach(long timeout, SimpleAppointmentListener listener) throws Exception {
+        public void readAtLeastOnce(long timeout, SimpleAppointmentListener listener) throws Exception {
             long remainingDelay = 0L;
             if (AjendaScheduler.this.pollerScheduledFuture != null) {
                 remainingDelay = AjendaScheduler.this.pollerScheduledFuture.getDelay(TimeUnit.MILLISECONDS);
                 AjendaScheduler.this.pollerScheduledFuture.cancel(false);
             }
-            AjendaScheduler.this.poller.scheduleAtFixedRate(() -> {
-                        try {
-                            AtLeastOnceAckEachModel.process(
-                                    AjendaScheduler.this,
-                                    pollPeriodMs,
-                                    limitSize,
-                                    AjendaScheduler.this.clock.nowEpochMs(),
-                                    timeout,
-                                    false,
-                                    listener,
-                                    customCondition);
-                        } catch (Exception e) {
-                            //TODO
-                            e.printStackTrace();
-                        }
-                    },
-                    remainingDelay,
-                    pollPeriodMs,
-                    TimeUnit.MILLISECONDS
-            );
-        }
-
-        public void readAtLeastOnceAckJoin(long timeout, boolean onlyLate, SimpleAppointmentListener listener) throws Exception {
-            long remainingDelay = 0L;
-            if (AjendaScheduler.this.pollerScheduledFuture != null) {
-                remainingDelay = AjendaScheduler.this.pollerScheduledFuture.getDelay(TimeUnit.MILLISECONDS);
-                AjendaScheduler.this.pollerScheduledFuture.cancel(false);
+            if (this.periodDeviationMs > 0) {
+                long minimumPeriod = pollPeriodMs - periodDeviationMs;
+                AtomicLong currentSleep = new AtomicLong(0);
+                AjendaScheduler.this.poller.scheduleWithFixedDelay(() -> {
+                            try {
+                                long nextSleep = ThreadLocalRandom.current()
+                                        .nextLong(0, 2 * periodDeviationMs);
+                                Thread.sleep(currentSleep.getAndSet(nextSleep));
+                                AtLeastOnceModel.process(
+                                        AjendaScheduler.this,
+                                        minimumPeriod + nextSleep,
+                                        limitSize,
+                                        AjendaScheduler.this.clock.nowEpochMs(),
+                                        timeout,
+                                        false,
+                                        listener,
+                                        customCondition);
+                            } catch (Throwable th) {
+                                //TODO
+                                //Show must go on
+                                th.printStackTrace();
+                            }
+                        },
+                        remainingDelay,
+                        minimumPeriod,
+                        TimeUnit.MILLISECONDS
+                );
+            } else {
+                AjendaScheduler.this.poller.scheduleAtFixedRate(() -> {
+                            try {
+                                AtLeastOnceModel.process(
+                                        AjendaScheduler.this,
+                                        pollPeriodMs,
+                                        limitSize,
+                                        AjendaScheduler.this.clock.nowEpochMs(),
+                                        timeout,
+                                        false,
+                                        listener,
+                                        customCondition);
+                            } catch (Throwable th) {
+                                //TODO
+                                //Show must go on
+                                th.printStackTrace();
+                            }
+                        },
+                        remainingDelay,
+                        pollPeriodMs,
+                        TimeUnit.MILLISECONDS
+                );
             }
-            AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleAtFixedRate(() -> {
-                        try {
-                            AtLeastOnceAckJoinModel.process(
-                                    AjendaScheduler.this,
-                                    pollPeriodMs,
-                                    limitSize,
-                                    AjendaScheduler.this.clock.nowEpochMs(),
-                                    timeout,
-                                    onlyLate,
-                                    listener,
-                                    customCondition);
-                        } catch (Exception e) {
-                            //TODO
-                            e.printStackTrace();
-                        }
-                    },
-                    0,
-                    pollPeriodMs,
-                    TimeUnit.MILLISECONDS
-            );
-        }
-
-        public void readAtLeastOnceAtomic(SimpleAppointmentListener listener) throws Exception {
-            long remainingDelay = 0L;
-            if (AjendaScheduler.this.pollerScheduledFuture != null) {
-                remainingDelay = AjendaScheduler.this.pollerScheduledFuture.getDelay(TimeUnit.MILLISECONDS);
-                AjendaScheduler.this.pollerScheduledFuture.cancel(false);
-            }
-            AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleAtFixedRate(() -> {
-                        try {
-                            AtLeastOnceAtomicModel.process(
-                                    AjendaScheduler.this,
-                                    limitSize,
-                                    AjendaScheduler.this.clock.nowEpochMs(),
-                                    listener,
-                                    customCondition);
-                        } catch (Exception e) {
-                            //TODO
-                            e.printStackTrace();
-                        }
-                    },
-                    remainingDelay,
-                    pollPeriodMs,
-                    TimeUnit.MILLISECONDS
-            );
         }
 
         //Connection In
-        public void readAtLeastOnceAckEach(long timeout, ConnectionInAppointmentListener listener) throws Exception {
+        public void readAtLeastOnce(long timeout, ConnectionInAppointmentListener listener) throws Exception {
             long remainingDelay = 0L;
             if (AjendaScheduler.this.pollerScheduledFuture != null) {
                 remainingDelay = AjendaScheduler.this.pollerScheduledFuture.getDelay(TimeUnit.MILLISECONDS);
                 AjendaScheduler.this.pollerScheduledFuture.cancel(false);
             }
-            AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleAtFixedRate(() -> {
-                        try {
-                            AtLeastOnceAckEachModel.process(
-                                    AjendaScheduler.this,
-                                    pollPeriodMs,
-                                    limitSize,
-                                    AjendaScheduler.this.clock.nowEpochMs(),
-                                    timeout,
-                                    false,
-                                    listener,
-                                    customCondition);
-                        } catch (Exception e) {
-                            //TODO
-                            e.printStackTrace();
-                        }
-                    },
-                    0,
-                    pollPeriodMs,
-                    TimeUnit.MILLISECONDS
-            );
-        }
-
-        public void readAtLeastOnceAtomic(ConnectionInAppointmentListener listener) throws Exception {
-            long remainingDelay = 0L;
-            if (AjendaScheduler.this.pollerScheduledFuture != null) {
-                remainingDelay = AjendaScheduler.this.pollerScheduledFuture.getDelay(TimeUnit.MILLISECONDS);
-                AjendaScheduler.this.pollerScheduledFuture.cancel(false);
+            if (this.periodDeviationMs > 0) {
+                long minimumPeriod = pollPeriodMs - periodDeviationMs;
+                AtomicLong currentSleep = new AtomicLong(0);
+                AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleWithFixedDelay(() -> {
+                            try {
+                                long nextSleep = ThreadLocalRandom.current()
+                                        .nextLong(0, 2 * periodDeviationMs);
+                                Thread.sleep(currentSleep.getAndSet(nextSleep));
+                                AtLeastOnceModel.process(
+                                        AjendaScheduler.this,
+                                        minimumPeriod + nextSleep,
+                                        limitSize,
+                                        AjendaScheduler.this.clock.nowEpochMs(),
+                                        timeout,
+                                        false,
+                                        listener,
+                                        customCondition);
+                            } catch (Exception e) {
+                                //TODO
+                                e.printStackTrace();
+                            }
+                        },
+                        remainingDelay,
+                        minimumPeriod,
+                        TimeUnit.MILLISECONDS
+                );
+            } else {
+                AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleAtFixedRate(() -> {
+                            try {
+                                AtLeastOnceModel.process(
+                                        AjendaScheduler.this,
+                                        pollPeriodMs,
+                                        limitSize,
+                                        AjendaScheduler.this.clock.nowEpochMs(),
+                                        timeout,
+                                        false,
+                                        listener,
+                                        customCondition);
+                            } catch (Exception e) {
+                                //TODO
+                                e.printStackTrace();
+                            }
+                        },
+                        remainingDelay,
+                        pollPeriodMs,
+                        TimeUnit.MILLISECONDS
+                );
             }
-            AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleAtFixedRate(() -> {
-                        try {
-                            AtLeastOnceAtomicModel.process(
-                                    AjendaScheduler.this,
-                                    limitSize,
-                                    AjendaScheduler.this.clock.nowEpochMs(),
-                                    listener,
-                                    customCondition);
-                        } catch (Exception e) {
-                            //TODO
-                            e.printStackTrace();
-                        }
-                    },
-                    0,
-                    pollPeriodMs,
-                    TimeUnit.MILLISECONDS
-            );
         }
 
     }
-    
+
     public int remainingSlots() {
         return idleThreads() + queueFreeSlots();
     }
@@ -453,5 +460,5 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
     public int queueFreeSlots() {
         return this.maxQueueSize - this.executor.getQueue().size();
     }
-    
+
 }

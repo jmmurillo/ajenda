@@ -21,7 +21,7 @@ public final class PeriodicAppointmentBookingBuilder {
     private PeriodicAppointmentBookingBuilder() {
     }
 
-    public static PeriodicAppointmentBookingBuilder aPeriodicAppointmentBooking() {
+    public static PeriodicAppointmentBookingBuilder aPeriodicBooking() {
         return new PeriodicAppointmentBookingBuilder();
     }
 

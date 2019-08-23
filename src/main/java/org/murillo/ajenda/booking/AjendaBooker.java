@@ -5,6 +5,7 @@ import org.murillo.ajenda.common.ConnectionFactory;
 import org.murillo.ajenda.common.InitializationModel;
 import org.murillo.ajenda.common.SyncedClock;
 import org.murillo.ajenda.dto.AppointmentBooking;
+import org.murillo.ajenda.dto.PeriodicAppointmentBooking;
 import org.murillo.ajenda.handling.AjendaScheduler;
 import org.murillo.ajenda.utils.Common;
 
@@ -17,6 +18,7 @@ public class AjendaBooker<T extends Connection> implements ConnectionFactory<T> 
     private final String topic;
     private final String schemaName;
     private final String tableName;
+    private final String periodicTableName;
     private final Clock clock;
 
     public AjendaBooker(ConnectionFactory<T> dataSource, String topic) throws Exception {
@@ -33,7 +35,8 @@ public class AjendaBooker<T extends Connection> implements ConnectionFactory<T> 
         this.clock = ajendaScheduler.getClock();
         this.topic = ajendaScheduler.getTopic();
         this.schemaName = ajendaScheduler.getSchemaName();
-        this.tableName = ajendaScheduler.getTableNameWithSchema();
+        this.tableName = ajendaScheduler.getTableName();
+        this.periodicTableName = ajendaScheduler.getPeriodicTableName();
     }
 
     public AjendaBooker(ConnectionFactory<T> dataSource, String topic, Clock clock) throws Exception {
@@ -46,7 +49,8 @@ public class AjendaBooker<T extends Connection> implements ConnectionFactory<T> 
         this.topic = topic;
         this.schemaName = schemaName;
         this.tableName = Common.getTableNameForTopic(topic);
-        InitializationModel.initTableForTopic(dataSource, topic, schemaName);
+        this.periodicTableName = Common.getPeriodicTableNameForTopic(topic);
+        InitializationModel.initTableForTopic(dataSource, topic, schemaName, tableName, periodicTableName);
     }
 
     public T getConnection() throws Exception {
@@ -68,6 +72,10 @@ public class AjendaBooker<T extends Connection> implements ConnectionFactory<T> 
         return '\"' + schemaName + "\"." + tableName;
     }
 
+    public String getPeriodicTableNameWithSchema() {
+        return '\"' + schemaName + "\"." + periodicTableName;
+    }
+
     public String getSchemaName() {
         return schemaName;
     }
@@ -82,6 +90,16 @@ public class AjendaBooker<T extends Connection> implements ConnectionFactory<T> 
 
     public void bookAppointment(AppointmentBooking booking) throws Exception {
         BookModel.book(this.getTableNameWithSchema(), this, this.getClock(), booking, 0);
+    }
+
+    public void bookAppointment(PeriodicAppointmentBooking booking) throws Exception {
+        BookModel.bookPeriodic(
+                this.getTableNameWithSchema(),
+                this.getPeriodicTableNameWithSchema(),
+                this,
+                this.getClock(),
+                booking,
+                0);
     }
 
 }

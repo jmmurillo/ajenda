@@ -6,9 +6,6 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.HashMap;
 
-import static org.murillo.ajenda.utils.Common.getPeriodicTableNameForTopic;
-import static org.murillo.ajenda.utils.Common.getTableNameForTopic;
-
 public class InitializationModel {
 
     public static final String TABLE_FOR_TOPIC_QUERY =
@@ -43,9 +40,7 @@ public class InitializationModel {
                     "WHERE  table_schema = ? " +
                     "AND    table_name = ? ";
 
-    public static void initTableForTopic(ConnectionFactory<?> dataSource, String topic, String schemaName) throws Exception {
-        String tableName = getTableNameForTopic(topic);
-        String periodicTableName = getPeriodicTableNameForTopic(topic);
+    public static void initTableForTopic(ConnectionFactory<?> dataSource, String topic, String schemaName, String tableName, String periodicTableName) throws Exception {
         try (Connection conn = dataSource.getConnection()) {
             if (conn.getAutoCommit()) throw new IllegalStateException("Connection must have auto-commit disabled");
             String createTableSql = String.format(

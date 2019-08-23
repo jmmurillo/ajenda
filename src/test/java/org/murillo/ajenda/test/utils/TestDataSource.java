@@ -27,6 +27,19 @@ public class TestDataSource implements ConnectionFactory {
         ds = new HikariDataSource(config);
     }
 
+    public TestDataSource(String jdbcUrl) {
+
+        config = new HikariConfig();
+        config.setJdbcUrl(jdbcUrl);
+        config.setUsername("postgres");
+        config.setPassword("mysecretpassword");
+        config.addDataSourceProperty("cachePrepStmts", "true");
+        config.addDataSourceProperty("prepStmtCacheSize", "250");
+        config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+        config.setAutoCommit(false);
+        ds = new HikariDataSource(config);
+    }
+
     public Connection getConnection() throws SQLException {
         return ds.getConnection();
     }

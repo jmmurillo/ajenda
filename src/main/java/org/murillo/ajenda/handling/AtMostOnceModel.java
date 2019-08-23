@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.murillo.ajenda.handling.Utils.extractAppointmentDue;
 
@@ -23,6 +24,8 @@ public class AtMostOnceModel {
     //COMMIT
     //PROCESS
     //:limitDueDate, :now, :size
+    static AtomicInteger atomicInteger = new AtomicInteger(0);
+    
     private static final String AT_MOST_ONCE_QUERY =
             "DELETE "
                     + "FROM %s "
@@ -123,13 +126,12 @@ public class AtMostOnceModel {
             });
         }
         try {
-            BookModel.rebook(
+            BookModel.book(
                     ajendaScheduler.getTableNameWithSchema(),
                     ajendaScheduler,
                     ajendaScheduler.getClock(),
                     builder.build(),
-                    appointmentDue.getAttempts() + 1,
-                    appointmentDue.getPeriodicAppointmentUid()
+                    appointmentDue.getAttempts() + 1
             );
         } catch (Throwable th1) {
             //TODO log
@@ -137,14 +139,15 @@ public class AtMostOnceModel {
         }
     }
 
-    private static List<AppointmentDue> selectAndDelete(
+    private synchronized static List<AppointmentDue> selectAndDelete(
             AjendaScheduler ajendaScheduler,
             long pollPeriod,
             int limitSize,
             long nowEpoch,
             boolean onlyLate,
             String customSqlCondition) throws Exception {
-
+        int andIncrement = atomicInteger.getAndIncrement();
+        
         String tableName = ajendaScheduler.getTableNameWithSchema();
         long limitDueDate = onlyLate ? nowEpoch : nowEpoch + pollPeriod;
 
@@ -166,12 +169,19 @@ public class AtMostOnceModel {
                 stmt.setInt(3, limitSize);
                 ResultSet resultSet = stmt.executeQuery();
                 while (resultSet.next()) {
-                    appointments.add(extractAppointmentDue(resultSet, nowEpoch));
+                    AppointmentDue appointmentDue = extractAppointmentDue(resultSet, nowEpoch);
+                    BookModel.bookNextIteration(
+                            appointmentDue, 
+                            ajendaScheduler.getTableNameWithSchema(), 
+                            ajendaScheduler.getPeriodicTableNameWithSchema(), 
+                            conn,
+                            nowEpoch);
+                    appointments.add(appointmentDue);
                 }
                 conn.commit();
+                //System.out.println("Conn: " + conn + "; Leidos " + appointments.size() + "; Time " + nowEpoch+"; Thread "+ Thread.currentThread());
             }
         }
-
         return appointments;
     }
 }
