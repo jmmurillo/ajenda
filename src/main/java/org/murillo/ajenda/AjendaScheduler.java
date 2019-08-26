@@ -1,35 +1,24 @@
-package org.murillo.ajenda.handling;
+package org.murillo.ajenda;
 
-import org.murillo.ajenda.booking.AjendaBooker;
-import org.murillo.ajenda.common.Clock;
-import org.murillo.ajenda.common.ConnectionFactory;
-import org.murillo.ajenda.common.InitializationModel;
-import org.murillo.ajenda.common.SyncedClock;
+import org.murillo.ajenda.dto.Clock;
+import org.murillo.ajenda.dto.ConnectionFactory;
 import org.murillo.ajenda.dto.ConnectionInAppointmentListener;
 import org.murillo.ajenda.dto.SimpleAppointmentListener;
-import org.murillo.ajenda.utils.Common;
+import org.murillo.ajenda.utils.SyncedClock;
 
 import java.sql.Connection;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
-import static org.murillo.ajenda.utils.Common.getPeriodicTableNameForTopic;
-
-public class AjendaScheduler<T extends Connection> implements ConnectionFactory<T> {
+public class AjendaScheduler<T extends Connection> extends AbstractAjendaBooker<T> {
 
     public static final String DEFAULT_SCHEMA_NAME = "public";
-    private final ConnectionFactory<T> dataSource;
-    private final String topic;
-    private final String schemaName;
-    private final String tableName;
-    private final String periodicTableName;
-    private final int maxQueueSize;
-    private final ScheduledThreadPoolExecutor executor;
-    private final ScheduledThreadPoolExecutor poller;
-    private final Clock clock;
+    
+    protected int maxQueueSize;
+    protected ScheduledThreadPoolExecutor executor;
+    protected ScheduledThreadPoolExecutor poller;
     protected volatile ScheduledFuture<?> pollerScheduledFuture = null;
     private boolean ownClock = false;
-    private AjendaBooker derivedBooker;
 
     public AjendaScheduler(ConnectionFactory<T> dataSource, String topic, String customSchema) throws Exception {
         this(dataSource, topic, new SyncedClock(dataSource), customSchema);
@@ -84,30 +73,20 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
             Clock clock,
             String schemaName
     ) throws Exception {
-        if (dataSource == null) throw new IllegalArgumentException("dataSource must not be null");
-        if (clock == null) throw new IllegalArgumentException("clock must not be null");
-        if (topic == null || topic.isEmpty()) throw new IllegalArgumentException("topic must not be empty");
-        if (schemaName == null || schemaName.isEmpty())
-            throw new IllegalArgumentException("schema name must not be empty");
+        super(
+          dataSource,
+          topic,
+          schemaName,
+          clock      
+        );
+        
         if (concurrencyLevel <= 0) throw new IllegalArgumentException("concurrencyLevel must be greater than zero");
         if (maxQueueSize <= 0) throw new IllegalArgumentException("maxQueueSize must be greater than zero");
-
-        this.dataSource = dataSource;
-        this.clock = clock;
-        this.topic = topic;
-        this.schemaName = schemaName;
-        this.tableName = Common.getTableNameForTopic(topic);
-        this.periodicTableName = getPeriodicTableNameForTopic(topic);
+        
         InitializationModel.initTableForTopic(dataSource, topic, schemaName, tableName, periodicTableName);
         this.maxQueueSize = maxQueueSize;
         this.executor = new ScheduledThreadPoolExecutor(concurrencyLevel, new ThreadPoolExecutor.DiscardPolicy());
-
         this.poller = new ScheduledThreadPoolExecutor(1, new ThreadPoolExecutor.DiscardPolicy());
-        this.derivedBooker = new AjendaBooker(this) {
-            @Override
-            public void shutdown(long gracePeriod) {
-            }
-        };
         //TODO Ofrecer estadísticas de trabajos en proceso, en cola, etc.
     }
 
@@ -147,10 +126,6 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
 
     public ScheduledThreadPoolExecutor getExecutor() {
         return executor;
-    }
-
-    public AjendaBooker derivedBooker() {
-        return this.derivedBooker;
     }
 
     public Clock getClock() {
@@ -250,7 +225,7 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
                     customCondition);
         }
     }
-
+    
     public class CheckAgendaPeriodically {
 
         private int limitSize;
@@ -460,5 +435,5 @@ public class AjendaScheduler<T extends Connection> implements ConnectionFactory<
     public int queueFreeSlots() {
         return this.maxQueueSize - this.executor.getQueue().size();
     }
-
+    
 }

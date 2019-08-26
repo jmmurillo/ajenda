@@ -5,10 +5,8 @@ import io.zonky.test.db.postgres.junit.SingleInstancePostgresRule;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.ClassRule;
-import org.murillo.ajenda.booking.AjendaBooker;
-import org.murillo.ajenda.common.Clock;
+import org.murillo.ajenda.AjendaScheduler;
 import org.murillo.ajenda.dto.*;
-import org.murillo.ajenda.handling.AjendaScheduler;
 import org.murillo.ajenda.test.utils.TestDataSource;
 
 import java.sql.Connection;
@@ -50,14 +48,14 @@ public class TestAtLeastOnce {
     public void test_simple_book_and_handle() throws Exception {
         String topic = "prueba";
         String payload = UUID.randomUUID().toString();
-
-        simpleBookAppointment(topic, payload, dataSource);
-
+        
         AjendaScheduler scheduler = new AjendaScheduler(
                 dataSource,
                 topic,
                 new Clock() {
                 });
+        
+        simpleBookAppointment(scheduler, payload);
 
         ArrayList<AppointmentDue> read = new ArrayList<>();
         scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, appointmentDue -> {
@@ -79,7 +77,6 @@ public class TestAtLeastOnce {
         String topic = "prueba";
         List<String> payloads = IntStream.range(0, 19).mapToObj(i -> String.valueOf(i)).collect(Collectors.toList());
 
-        simpleBookAppointment(topic, payloads, dataSource);
 
         AjendaScheduler scheduler = new AjendaScheduler(
                 dataSource,
@@ -89,6 +86,8 @@ public class TestAtLeastOnce {
                 new Clock() {
                 });
 
+        simpleBookAppointment(scheduler, payloads);
+        
         ArrayList<AppointmentDue> read = new ArrayList<>();
         scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, appointmentDue -> {
             read.add(appointmentDue);
@@ -117,25 +116,22 @@ public class TestAtLeastOnce {
             }
         };
 
-        AjendaBooker booker = new AjendaBooker(
-                dataSource,
-                topic,
-                clock);
 
-        booker.bookAppointment(
-                AppointmentBookingBuilder.aBooking()
-                        .withDueTimestamp(1)
-                        .build());
-
-        booker.bookAppointment(
-                AppointmentBookingBuilder.aBooking()
-                        .withDueTimestamp(2)
-                        .build());
 
         AjendaScheduler scheduler = new AjendaScheduler(
                 dataSource,
                 topic,
                 clock);
+
+        scheduler.book(
+                AppointmentBookingBuilder.aBooking()
+                        .withDueTimestamp(1)
+                        .build());
+
+        scheduler.book(
+                AppointmentBookingBuilder.aBooking()
+                        .withDueTimestamp(2)
+                        .build());
 
         ArrayList<AppointmentDue> read = new ArrayList<>();
         scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, appointmentDue -> {
@@ -156,12 +152,6 @@ public class TestAtLeastOnce {
         String topic = "prueba";
         String payload = UUID.randomUUID().toString();
 
-        AjendaBooker booker = new AjendaBooker(
-                dataSource,
-                topic,
-                new Clock() {
-                });
-
         AjendaScheduler scheduler = new AjendaScheduler(
                 dataSource,
                 topic,
@@ -175,7 +165,7 @@ public class TestAtLeastOnce {
                     read.add(e);
                 });
 
-        booker.bookAppointment(
+        scheduler.bookPeriodic(
                 PeriodicAppointmentBookingBuilder.aPeriodicBooking()
                         .withFixedPeriod(500, PeriodicPatternType.FIXED_RATE)
                         .withPayload(payload)
@@ -188,28 +178,16 @@ public class TestAtLeastOnce {
 
     }
 
-    private void simpleBookAppointment(String topic, String payload, TestDataSource dataSource) throws Exception {
-        AjendaBooker booker = new AjendaBooker(
-                dataSource,
-                topic,
-                new Clock() {
-                });
-
-        booker.bookAppointment(
+    private void simpleBookAppointment(AjendaBooker booker, String payload) throws Exception {
+        booker.book(
                 AppointmentBookingBuilder.aBooking()
                         .withPayload(payload)
                         .build());
     }
 
-    private void simpleBookAppointment(String topic, List<String> payloads, TestDataSource dataSource) throws Exception {
-        AjendaBooker booker = new AjendaBooker(
-                dataSource,
-                topic,
-                new Clock() {
-                });
-
+    private void simpleBookAppointment(AjendaBooker booker, List<String> payloads) throws Exception {
         for (String payload : payloads) {
-            booker.bookAppointment(
+            booker.book(
                     AppointmentBookingBuilder.aBooking()
                             .withPayload(payload)
                             .build());

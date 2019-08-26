@@ -1,6 +1,5 @@
-package org.murillo.ajenda.handling;
+package org.murillo.ajenda;
 
-import org.murillo.ajenda.booking.BookModel;
 import org.murillo.ajenda.dto.AppointmentBookingBuilder;
 import org.murillo.ajenda.dto.AppointmentDue;
 import org.murillo.ajenda.dto.SimpleAppointmentListener;
@@ -10,22 +9,23 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.murillo.ajenda.handling.Utils.extractAppointmentDue;
+import static org.murillo.ajenda.Common.extractAppointmentDue;
 
-public class AtMostOnceModel {
+class AtMostOnceModel {
 
     //AT_MOST_ONCE_QUERY (DELETE)
     //COMMIT
     //PROCESS
     //:limitDueDate, :now, :size
     static AtomicInteger atomicInteger = new AtomicInteger(0);
-    
+
     private static final String AT_MOST_ONCE_QUERY =
             "DELETE "
                     + "FROM %s "
@@ -130,8 +130,8 @@ public class AtMostOnceModel {
                     ajendaScheduler.getTableNameWithSchema(),
                     ajendaScheduler,
                     ajendaScheduler.getClock(),
-                    builder.build(),
-                    appointmentDue.getAttempts() + 1
+                    appointmentDue.getAttempts() + 1,
+                    Arrays.asList(builder.build())
             );
         } catch (Throwable th1) {
             //TODO log
@@ -146,8 +146,7 @@ public class AtMostOnceModel {
             long nowEpoch,
             boolean onlyLate,
             String customSqlCondition) throws Exception {
-        int andIncrement = atomicInteger.getAndIncrement();
-        
+
         String tableName = ajendaScheduler.getTableNameWithSchema();
         long limitDueDate = onlyLate ? nowEpoch : nowEpoch + pollPeriod;
 
@@ -171,15 +170,14 @@ public class AtMostOnceModel {
                 while (resultSet.next()) {
                     AppointmentDue appointmentDue = extractAppointmentDue(resultSet, nowEpoch);
                     BookModel.bookNextIteration(
-                            appointmentDue, 
-                            ajendaScheduler.getTableNameWithSchema(), 
-                            ajendaScheduler.getPeriodicTableNameWithSchema(), 
+                            appointmentDue,
+                            ajendaScheduler.getTableNameWithSchema(),
+                            ajendaScheduler.getPeriodicTableNameWithSchema(),
                             conn,
                             nowEpoch);
                     appointments.add(appointmentDue);
                 }
                 conn.commit();
-                //System.out.println("Conn: " + conn + "; Leidos " + appointments.size() + "; Time " + nowEpoch+"; Thread "+ Thread.currentThread());
             }
         }
         return appointments;

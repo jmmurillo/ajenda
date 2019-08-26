@@ -2,7 +2,7 @@ package org.murillo.ajenda.test.utils;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import org.murillo.ajenda.common.ConnectionFactory;
+import org.murillo.ajenda.dto.ConnectionFactory;
 
 import javax.sql.DataSource;
 import java.sql.Connection;

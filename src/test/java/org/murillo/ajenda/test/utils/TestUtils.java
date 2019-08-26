@@ -1,6 +1,6 @@
 package org.murillo.ajenda.test.utils;
 
-import org.murillo.ajenda.common.ConnectionFactory;
+import org.murillo.ajenda.dto.ConnectionFactory;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;

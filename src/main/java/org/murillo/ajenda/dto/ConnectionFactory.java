@@ -1,4 +1,4 @@
-package org.murillo.ajenda.common;
+package org.murillo.ajenda.dto;
 
 import java.sql.Connection;
 

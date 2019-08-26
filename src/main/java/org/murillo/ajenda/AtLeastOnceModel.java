@@ -1,7 +1,5 @@
-package org.murillo.ajenda.handling;
+package org.murillo.ajenda;
 
-import org.murillo.ajenda.booking.AjendaBooker;
-import org.murillo.ajenda.booking.BookModel;
 import org.murillo.ajenda.dto.AppointmentDue;
 import org.murillo.ajenda.dto.ConnectionInAppointmentListener;
 import org.murillo.ajenda.dto.SimpleAppointmentListener;
@@ -15,9 +13,9 @@ import java.util.List;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
-import static org.murillo.ajenda.handling.Utils.extractAppointmentDue;
+import static org.murillo.ajenda.Common.extractAppointmentDue;
 
-public class AtLeastOnceModel {
+class AtLeastOnceModel {
 
     //AT_LEAST_ONCE_ACKED_QUERY
     //COMMIT
@@ -216,7 +214,7 @@ public class AtLeastOnceModel {
                         ajendaScheduler.getClock().nowEpochMs());
             }
             try {
-                listener.receive(appointmentDue, new AjendaBooker(ajendaScheduler) {
+                listener.receive(appointmentDue, new AbstractAjendaBooker(ajendaScheduler) {
                     @Override
                     public Connection getConnection() {
                         return conn;

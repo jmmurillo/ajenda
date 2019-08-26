@@ -1,4 +1,4 @@
-package org.murillo.ajenda.handling;
+package org.murillo.ajenda;
 
 import org.murillo.ajenda.dto.AppointmentDue;
 import org.murillo.ajenda.dto.PeriodicAppointmentBooking;
@@ -7,10 +7,49 @@ import org.murillo.ajenda.dto.PeriodicPatternType;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 
-public class Utils {
+public class Common {
+    public static String getTableNameForTopic(String topic) {
+        return String.format("ajenda_%s", topic).toLowerCase(Locale.ENGLISH);
+    }    
+    
+    public static String getPeriodicTableNameForTopic(String topic) {
+        return String.format("periodic_ajenda_%s", topic).toLowerCase(Locale.ENGLISH);
+    }
+
+    public static long nowEpoch() {
+        return Instant.now().toEpochMilli();
+    }
+
+    public static boolean shutdown(
+            ScheduledThreadPoolExecutor executor,
+            long gracePeriodMs) {
+        executor.shutdownNow();
+        try {
+            return executor.awaitTermination(gracePeriodMs, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            //TODO
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public static ThreadFactory newDaemonExecutorThreadFactory() {
+        ThreadFactory defaultThreadFactory = Executors.defaultThreadFactory();
+        return r -> {
+            Thread thread = defaultThreadFactory.newThread(r);
+            thread.setDaemon(true);
+            return thread;
+        };
+    }
 
     public static AppointmentDue extractAppointmentDue(ResultSet rs, long nowEpoch) throws SQLException {
         ResultSetMetaData metaData = rs.getMetaData();

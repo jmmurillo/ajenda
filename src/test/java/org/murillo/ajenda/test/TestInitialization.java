@@ -5,11 +5,11 @@
 //import org.hamcrest.CoreMatchers;
 //import org.junit.Assert;
 //import org.junit.Rule;
-//import org.murillo.ajenda.booking.AjendaBooker;
-//import org.murillo.ajenda.common.Clock;
+//import org.murillo.ajenda.dto.AjendaBooker;
+//import org.murillo.ajenda.dto.Clock;
 //import org.murillo.ajenda.test.utils.TestDataSource;
 //import org.murillo.ajenda.test.utils.TestUtils;
-//import org.murillo.ajenda.utils.Common;
+//import org.murillo.ajenda.Common;
 //
 //import java.sql.Connection;
 //import java.sql.Statement;

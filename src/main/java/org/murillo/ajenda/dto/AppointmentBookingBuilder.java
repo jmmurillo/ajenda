@@ -27,6 +27,11 @@ public final class AppointmentBookingBuilder {
         return this;
     }
 
+    public AppointmentBookingBuilder withHashUid(String key) {
+        this.appointmentUid = UUIDType5.nameUUIDFromCustomString(key);
+        return this;
+    }
+    
     public AppointmentBookingBuilder withHashUid() {
         this.appointmentUid = null;
         return this;

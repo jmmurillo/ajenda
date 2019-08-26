@@ -1,4 +1,6 @@
-package org.murillo.ajenda.common;
+package org.murillo.ajenda;
+
+import org.murillo.ajenda.dto.ConnectionFactory;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
