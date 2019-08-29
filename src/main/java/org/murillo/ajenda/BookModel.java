@@ -47,7 +47,7 @@ class BookModel<T extends Connection> {
     private static final String CANCEL_BOOKINGS_QUERY =
             "DELETE "
                     + "FROM %s "
-                    + "WHERE uuid IN (%s)"
+                    + "WHERE uuid IN (%s) "
                     + "AND periodic_uuid IS NULL";
 
     private static final String CANCEL_PERIODIC_BOOKINGS_FROM_MAIN_QUERY =
