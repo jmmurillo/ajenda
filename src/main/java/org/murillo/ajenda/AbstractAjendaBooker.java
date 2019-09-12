@@ -107,7 +107,6 @@ public abstract class AbstractAjendaBooker<T extends Connection> implements Ajen
                 this.getPeriodicTableNameWithSchema(),
                 this,
                 this.getClock(),
-                0,
                 bookings);
     }
 

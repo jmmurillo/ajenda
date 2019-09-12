@@ -58,14 +58,14 @@ public class TestAtLeastOnce {
         simpleBookAppointment(scheduler, payload);
 
         ArrayList<AppointmentDue> read = new ArrayList<>();
-        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
 
         Assert.assertEquals(1, read.size());
         Assert.assertEquals(payload, read.get(0).getPayload());
 
-        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
         Assert.assertEquals(1, read.size());
@@ -100,14 +100,14 @@ public class TestAtLeastOnce {
                         .build());
 
         ArrayList<AppointmentDue> read = new ArrayList<>();
-        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
 
         Assert.assertEquals(0, read.size());
         time.set(3L);
 
-        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
         Assert.assertEquals(2, read.size());
@@ -150,7 +150,7 @@ public class TestAtLeastOnce {
         );
 
         ArrayList<AppointmentDue> read = new ArrayList<>();
-        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
 
@@ -159,7 +159,7 @@ public class TestAtLeastOnce {
         scheduler.cancel(uuid1);
         time.set(3L);
 
-        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
         Assert.assertEquals(1, read.size());
@@ -183,11 +183,11 @@ public class TestAtLeastOnce {
         simpleBookAppointment(scheduler, payloads);
         
         ArrayList<AppointmentDue> read = new ArrayList<>();
-        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
         Assert.assertEquals(10, read.size());
-        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
         Assert.assertEquals(19, read.size());
@@ -228,14 +228,14 @@ public class TestAtLeastOnce {
                         .build());
 
         ArrayList<AppointmentDue> read = new ArrayList<>();
-        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
         Assert.assertEquals(0, read.size());
 
         time.set(2L);
 
-        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
         Assert.assertEquals(2, read.size());
@@ -269,19 +269,19 @@ public class TestAtLeastOnce {
                         .build());
 
         ArrayList<AppointmentDue> read = new ArrayList<>();
-        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
         Assert.assertEquals(0, read.size());
 
         time.set(1L);
-        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
         Assert.assertEquals(1, read.size());
 
         time.set(2L);
-        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, appointmentDue -> {
+        scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
         Assert.assertEquals(2, read.size());
@@ -301,7 +301,7 @@ public class TestAtLeastOnce {
         long t = System.currentTimeMillis();
         ArrayList<AppointmentDue> read = new ArrayList<>();
         scheduler.checkAgenda().withFetchSize(10).periodically(100)
-                .readAtLeastOnce(10000, e -> {
+                .readAtLeastOnce(10000, (e,c) -> {
                     read.add(e);
                 });
 
@@ -332,7 +332,7 @@ public class TestAtLeastOnce {
         long t = System.currentTimeMillis();
         ArrayList<AppointmentDue> read = new ArrayList<>();
         scheduler.checkAgenda().withFetchSize(10).periodically(100)
-                .readAtLeastOnce(10000, e -> {
+                .readAtLeastOnce(10000, (e,c) -> {
                     read.add(e);
                 });
 

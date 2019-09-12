@@ -1,9 +1,6 @@
 package org.murillo.ajenda;
 
-import org.murillo.ajenda.dto.Clock;
-import org.murillo.ajenda.dto.ConnectionFactory;
-import org.murillo.ajenda.dto.ConnectionInAppointmentListener;
-import org.murillo.ajenda.dto.SimpleAppointmentListener;
+import org.murillo.ajenda.dto.*;
 import org.murillo.ajenda.utils.SyncedClock;
 
 import java.sql.Connection;
@@ -19,6 +16,13 @@ public class AjendaScheduler<T extends Connection> extends AbstractAjendaBooker<
     protected ScheduledThreadPoolExecutor poller;
     protected volatile ScheduledFuture<?> pollerScheduledFuture = null;
     private boolean ownClock = false;
+    
+    private long startTime;
+    private AtomicLong readCount = new AtomicLong(0);
+    private AtomicLong processedCount = new AtomicLong(0);
+    private long beganToProcessCount = 0;
+    private double meanLag = 0.0;
+    
 
     public AjendaScheduler(ConnectionFactory<T> dataSource, String topic, String customSchema) throws Exception {
         this(dataSource, topic, new SyncedClock(dataSource), customSchema);
@@ -87,6 +91,9 @@ public class AjendaScheduler<T extends Connection> extends AbstractAjendaBooker<
         this.maxQueueSize = maxQueueSize;
         this.executor = new ScheduledThreadPoolExecutor(concurrencyLevel, new ThreadPoolExecutor.DiscardPolicy());
         this.poller = new ScheduledThreadPoolExecutor(1, new ThreadPoolExecutor.DiscardPolicy());
+        
+        this.startTime = clock.nowEpochMs();
+        
         //TODO Ofrecer estadísticas de trabajos en proceso, en cola, etc.
     }
 
@@ -148,6 +155,16 @@ public class AjendaScheduler<T extends Connection> extends AbstractAjendaBooker<
         return periodicTableName;
     }
 
+    public double getMeanLag() {
+        return meanLag;
+    }
+
+    public synchronized void addBeganToProcess(long dueTimestamp) {
+        beganToProcessCount++;
+        final long lag = this.clock.nowEpochMs() - dueTimestamp;
+        meanLag = (meanLag * beganToProcessCount + lag) / ++beganToProcessCount;
+    }
+
     public class CheckAgenda {
 
         private String customCondition;
@@ -200,7 +217,7 @@ public class AjendaScheduler<T extends Connection> extends AbstractAjendaBooker<
                     customCondition);
         }
 
-        public void readAtLeastOnce(long timeout, SimpleAppointmentListener listener) throws Exception {
+        public void readAtLeastOnce(long timeout, CancellableAppointmentListener listener) throws Exception {
             AtLeastOnceModel.process(
                     AjendaScheduler.this,
                     0,
@@ -213,7 +230,7 @@ public class AjendaScheduler<T extends Connection> extends AbstractAjendaBooker<
         }
 
         //Connection In
-        public void readAtLeastOnce(long timeout, ConnectionInAppointmentListener listener) throws Exception {
+        public void readAtLeastOnce(long timeout, TransactionalAppointmentListener listener) throws Exception {
             AtLeastOnceModel.process(
                     AjendaScheduler.this,
                     0,
@@ -307,7 +324,7 @@ public class AjendaScheduler<T extends Connection> extends AbstractAjendaBooker<
             }
         }
 
-        public void readAtLeastOnce(long timeout, SimpleAppointmentListener listener) throws Exception {
+        public void readAtLeastOnce(long timeout, CancellableAppointmentListener listener) throws Exception {
             long remainingDelay = 0L;
             if (AjendaScheduler.this.pollerScheduledFuture != null) {
                 remainingDelay = AjendaScheduler.this.pollerScheduledFuture.getDelay(TimeUnit.MILLISECONDS);
@@ -366,7 +383,7 @@ public class AjendaScheduler<T extends Connection> extends AbstractAjendaBooker<
         }
 
         //Connection In
-        public void readAtLeastOnce(long timeout, ConnectionInAppointmentListener listener) throws Exception {
+        public void readAtLeastOnce(long timeout, TransactionalAppointmentListener listener) throws Exception {
             long remainingDelay = 0L;
             if (AjendaScheduler.this.pollerScheduledFuture != null) {
                 remainingDelay = AjendaScheduler.this.pollerScheduledFuture.getDelay(TimeUnit.MILLISECONDS);
@@ -424,6 +441,14 @@ public class AjendaScheduler<T extends Connection> extends AbstractAjendaBooker<
 
     }
 
+    void addRead(int read){
+        this.readCount.addAndGet(read);
+    }
+
+    void addProcessed(int processed){
+        this.processedCount.addAndGet(processed);
+    }
+    
     public int remainingSlots() {
         return idleThreads() + queueFreeSlots();
     }
@@ -435,5 +460,8 @@ public class AjendaScheduler<T extends Connection> extends AbstractAjendaBooker<
     public int queueFreeSlots() {
         return this.maxQueueSize - this.executor.getQueue().size();
     }
-    
+
+    ScheduledThreadPoolExecutor getPoller() {
+        return poller;
+    }
 }

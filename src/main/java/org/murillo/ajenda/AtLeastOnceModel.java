@@ -1,8 +1,8 @@
 package org.murillo.ajenda;
 
 import org.murillo.ajenda.dto.AppointmentDue;
-import org.murillo.ajenda.dto.ConnectionInAppointmentListener;
-import org.murillo.ajenda.dto.SimpleAppointmentListener;
+import org.murillo.ajenda.dto.CancellableAppointmentListener;
+import org.murillo.ajenda.dto.TransactionalAppointmentListener;
 import org.murillo.ajenda.dto.UnhandledAppointmentException;
 
 import java.sql.Connection;
@@ -10,6 +10,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
@@ -48,12 +49,12 @@ class AtLeastOnceModel {
 
     public static void process(
             AjendaScheduler ajendaScheduler,
-            long pollPeriod,
+            long lookAhead,
             int limitSize,
             long nowEpoch,
             long timeout,
             boolean blocking,
-            SimpleAppointmentListener listener,
+            CancellableAppointmentListener listener,
             String customSqlCondition
     ) throws Exception {
         synchronized (ajendaScheduler.getExecutor()) {
@@ -62,21 +63,23 @@ class AtLeastOnceModel {
             scheduleAndAckIndividually(
                     ajendaScheduler,
                     nowEpoch,
+                    lookAhead,
+                    timeout,
                     blocking,
                     listener,
-                    selectAndUpdate(ajendaScheduler, pollPeriod, minSize, nowEpoch, timeout, customSqlCondition)
+                    selectAndUpdate(ajendaScheduler, lookAhead, minSize, nowEpoch, timeout, customSqlCondition)
             );
         }
     }
 
     public static void process(
             AjendaScheduler ajendaScheduler,
-            long pollPeriod,
+            long lookAhead,
             int limitSize,
             long nowEpoch,
             long timeout,
             boolean blocking,
-            ConnectionInAppointmentListener listener,
+            TransactionalAppointmentListener listener,
             String customSqlCondition
     ) throws Exception {
         synchronized (ajendaScheduler.getExecutor()) {
@@ -85,18 +88,22 @@ class AtLeastOnceModel {
             scheduleAndAckIndividually(
                     ajendaScheduler,
                     nowEpoch,
+                    lookAhead,
+                    timeout,
                     blocking,
                     listener,
-                    selectAndUpdate(ajendaScheduler, pollPeriod, minSize, nowEpoch, timeout, customSqlCondition)
+                    selectAndUpdate(ajendaScheduler, lookAhead, minSize, nowEpoch, timeout, customSqlCondition)
             );
         }
     }
-    
+
     private static void scheduleAndAckIndividually(
             AjendaScheduler ajendaScheduler,
             long nowEpoch,
+            long lookAhead,
+            long timeout,
             boolean blocking,
-            SimpleAppointmentListener listener,
+            CancellableAppointmentListener listener,
             List<AppointmentDue> appointments) throws InterruptedException {
         Semaphore semaphore = blocking ?
                 new Semaphore(0)
@@ -106,9 +113,13 @@ class AtLeastOnceModel {
         try {
             for (AppointmentDue a : appointments) {
                 long delay = a.getDueTimestamp() - nowEpoch;
-                ajendaScheduler.getExecutor().schedule(() -> {
+                CancelFlag cancelFlag = new CancelFlag();
+                final ScheduledFuture<?> future = ajendaScheduler.getExecutor().schedule(() -> {
+                    try{
                             try {
-                                listener.receive(a);
+                                ajendaScheduler.addBeganToProcess(a.getDueTimestamp());
+                                listener.receive(a, cancelFlag);
+                                ajendaScheduler.addProcessed(1);
                             } catch (UnhandledAppointmentException th) {
                                 //Controlled exception
                                 return;
@@ -122,11 +133,14 @@ class AtLeastOnceModel {
                                 ackIndividually(
                                         ajendaScheduler,
                                         tableName,
-                                        a);
+                                        a,
+                                        lookAhead,
+                                        cancelFlag);
                             } catch (Throwable th) {
                                 //TODO log
                                 th.printStackTrace();
                                 return;
+                            }
                             } finally {
                                 if (blocking) semaphore.release();
                             }
@@ -134,6 +148,13 @@ class AtLeastOnceModel {
                         delay > 0 ? delay : 0,
                         TimeUnit.MILLISECONDS);
                 scheduled++;
+                ajendaScheduler.getPoller().schedule(
+                        () -> {
+                            cancelFlag.setCancelled(true);
+                            future.cancel(true);
+                        },
+                        (delay > 0 ? delay : 0) + timeout,
+                        TimeUnit.MILLISECONDS);
             }
         } finally {
             if (blocking) semaphore.acquire(scheduled);
@@ -143,8 +164,10 @@ class AtLeastOnceModel {
     private static void scheduleAndAckIndividually(
             AjendaScheduler ajendaScheduler,
             long nowEpoch,
+            long lookAhead,
+            long timeout,
             boolean blocking,
-            ConnectionInAppointmentListener listener,
+            TransactionalAppointmentListener listener,
             List<AppointmentDue> appointments) throws InterruptedException {
 
         Semaphore semaphore = blocking ?
@@ -155,13 +178,17 @@ class AtLeastOnceModel {
         try {
             for (AppointmentDue a : appointments) {
                 long delay = a.getDueTimestamp() - nowEpoch;
-                ajendaScheduler.getExecutor().schedule(() -> {
+                CancelFlag cancelFlag = new CancelFlag();
+                final ScheduledFuture<?> future = ajendaScheduler.getExecutor().schedule(() -> {
+                    
                             try {
-                                executeAndAck(
+                                if(!cancelFlag.isCancelled()) executeAndAck(
                                         ajendaScheduler,
                                         tableName,
                                         listener,
-                                        a
+                                        a,
+                                        lookAhead,
+                                        cancelFlag
                                 );
                             } catch (Throwable th) {
                                 //TODO log
@@ -173,25 +200,32 @@ class AtLeastOnceModel {
                         delay > 0 ? delay : 0,
                         TimeUnit.MILLISECONDS);
                 scheduled++;
+                ajendaScheduler.getPoller().schedule(
+                        () -> {
+                            cancelFlag.setCancelled(true);
+                            future.cancel(true);
+                        },
+                        (delay > 0 ? delay : 0) + timeout,
+                        TimeUnit.MILLISECONDS);
             }
         } finally {
             if (blocking) semaphore.acquire(scheduled);
         }
     }
 
-    private static void ackIndividually(AjendaScheduler ajendaScheduler, String tableName, AppointmentDue appointmentDue) throws Exception {
+    private static void ackIndividually(AjendaScheduler ajendaScheduler, String tableName, AppointmentDue appointmentDue, long lookAhead, CancelFlag cancelFlag) throws Exception {
         try (Connection conn = ajendaScheduler.getConnection()) {
             String sql = String.format(ACK_ONE_QUERY, tableName);
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
                 stmt.setObject(1, appointmentDue.getAppointmentUid());
                 stmt.execute();
-                BookModel.bookNextIteration(
+                BookModel.bookNextIterations(
                         appointmentDue,
                         ajendaScheduler.getTableNameWithSchema(),
                         ajendaScheduler.getPeriodicTableNameWithSchema(),
                         conn,
-                        ajendaScheduler.getClock().nowEpochMs());                
-                conn.commit();
+                        ajendaScheduler.getClock().nowEpochMs());
+                if(!cancelFlag.isCancelled()) conn.commit();
             }
         }
     }
@@ -199,28 +233,35 @@ class AtLeastOnceModel {
     private static void executeAndAck(
             AjendaScheduler ajendaScheduler,
             String tableName,
-            ConnectionInAppointmentListener listener,
-            AppointmentDue appointmentDue) throws Exception {
+            TransactionalAppointmentListener listener,
+            AppointmentDue appointmentDue,
+            long lookAhead,
+            CancelFlag cancelFlag) throws Exception {
         try (Connection conn = ajendaScheduler.getConnection()) {
             String sql = String.format(ACK_ONE_QUERY, tableName);
+            final long nowEpoch = ajendaScheduler.getClock().nowEpochMs();
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
                 stmt.setObject(1, appointmentDue.getAppointmentUid());
                 stmt.execute();
-                BookModel.bookNextIteration(
+                BookModel.bookNextIterations(
                         appointmentDue,
                         ajendaScheduler.getTableNameWithSchema(),
                         ajendaScheduler.getPeriodicTableNameWithSchema(),
                         conn,
-                        ajendaScheduler.getClock().nowEpochMs());
+                        nowEpoch);
             }
             try {
-                listener.receive(appointmentDue, new AbstractAjendaBooker(ajendaScheduler) {
+                ajendaScheduler.addBeganToProcess(appointmentDue.getDueTimestamp());
+                listener.receive(appointmentDue, cancelFlag, new AbstractAjendaBooker(ajendaScheduler) {
                     @Override
                     public Connection getConnection() {
                         return conn;
                     }
                 });
-                conn.commit();
+                if(!cancelFlag.isCancelled()) {
+                    conn.commit();
+                    ajendaScheduler.addProcessed(1);
+                }
             } catch (UnhandledAppointmentException th) {
                 //Controlled error
                 return;
@@ -267,6 +308,7 @@ class AtLeastOnceModel {
                     appointments.add(appointmentDue);
                 }
                 conn.commit();
+                ajendaScheduler.addRead(appointments.size());
             }
         }
         return appointments;

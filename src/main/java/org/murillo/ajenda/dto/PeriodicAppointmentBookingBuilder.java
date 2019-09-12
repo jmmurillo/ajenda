@@ -12,7 +12,7 @@ import java.util.UUID;
 public final class PeriodicAppointmentBookingBuilder {
     private UUID appointmentUid;
     private PeriodicPatternType patternType;
-    private long startTimestamp;
+    private long startTimestamp = 0;
     private String pattern;
     private String payload;
     private HashMap<String, Object> extraParams = new HashMap<>();
@@ -31,6 +31,11 @@ public final class PeriodicAppointmentBookingBuilder {
         return this;
     }
 
+    public PeriodicAppointmentBookingBuilder withHashUid(String key) {
+        this.appointmentUid = UUIDType5.nameUUIDFromCustomString(key);
+        return this;
+    }    
+    
     public PeriodicAppointmentBookingBuilder withHashUid() {
         this.appointmentUid = null;
         return this;
@@ -42,12 +47,17 @@ public final class PeriodicAppointmentBookingBuilder {
         return this;
     }
 
-    public PeriodicAppointmentBookingBuilder withInitialDelay(long initialDelayMs) {
-        if (initialDelayMs < 0) throw new IllegalArgumentException("initialDelayMs must not be a negative long");
-        this.startTimestamp = -initialDelayMs;
+    public PeriodicAppointmentBookingBuilder withDelayedStart(long delayMs) {
+        if (delayMs < 0) throw new IllegalArgumentException("delayMs must not be a negative long");
+        this.startTimestamp = -delayMs;
         return this;
     }
 
+    public PeriodicAppointmentBookingBuilder withImmediateStart() {
+        this.startTimestamp = 0L;
+        return this;
+    }
+    
     public PeriodicAppointmentBookingBuilder withFixedPeriod(long period, PeriodicPatternType patternType) {
         if (patternType == null) throw new IllegalArgumentException("patternType must not be null");
         this.patternType = patternType;
@@ -59,7 +69,7 @@ public final class PeriodicAppointmentBookingBuilder {
             default:
                 throw new IllegalArgumentException("patternType " + patternType + " is not a simple period sub-type");
         }
-        this.pattern = String.valueOf(period);
+        this.pattern = Long.toHexString(period);
         return this;
     }
 

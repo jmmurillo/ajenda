@@ -7,10 +7,7 @@ import com.cronutils.parser.CronParser;
 import org.murillo.ajenda.dto.*;
 import org.murillo.ajenda.utils.UUIDType5;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.Types;
+import java.sql.*;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -27,11 +24,17 @@ class BookModel<T extends Connection> {
 
     private static final String BOOK_INSERT_QUERY =
             "INSERT INTO %s "
-                    + "(uuid, creation_date, due_date, expiry_date, attempts, payload, periodic_uuid%s) "
-                    + "VALUES (?, ?, ?, -1, ?, ?, ?%s) "
+                    + "(uuid, creation_date, due_date, expiry_date, attempts, payload, periodic_uuid, flags%s) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?%s) "
                     + "ON CONFLICT (uuid) DO UPDATE SET "
-                    + "(uuid, creation_date, due_date, expiry_date, attempts, payload, periodic_uuid%s) "
-                    + "= (?, ?, ?, -1, ?, ?, ?%s) ";
+                    + "(uuid, creation_date, due_date, expiry_date, attempts, payload, periodic_uuid, flags%s) "
+                    + "= (?, ?, ?, ?, ?, ?, ?, ?%s) ";
+
+    private static final String BOOK_INSERT_DONT_UPDATE_QUERY =
+            "INSERT INTO %s "
+                    + "(uuid, creation_date, due_date, expiry_date, attempts, payload, periodic_uuid, flags%s) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?%s) "
+                    + "ON CONFLICT (uuid) DO NOTHING";
 
     private static final String PERIODIC_BOOK_INSERT_QUERY =
             "INSERT INTO %s "
@@ -60,12 +63,14 @@ class BookModel<T extends Connection> {
                     + "FROM %s "
                     + "WHERE uuid IN (%s)";
 
+    private static final int MAX_POLL_PERIODIC_FREQ_RATIO = 128;
+
     static void cancel(
             String tableName,
             ConnectionFactory<?> connectionFactory,
             List<UUID> uuids
     ) throws Exception {
-        
+
         while (uuids.remove(null)) ;
         if (uuids.isEmpty()) return;
 
@@ -74,7 +79,7 @@ class BookModel<T extends Connection> {
                 tableName,
                 buildQuestionMarks(uuids.size())
         );
-        
+
         try (Connection conn = connectionFactory.getConnection()) {
             if (conn.getAutoCommit()) throw new IllegalStateException("Connection must have auto-commit disabled");
             try (PreparedStatement stmt = conn.prepareStatement(cancelSql)) {
@@ -104,13 +109,13 @@ class BookModel<T extends Connection> {
                 periodicTableName,
                 questionMarks
         );
-        
+
         String cancelFromMainSql = String.format(
                 CANCEL_PERIODIC_BOOKINGS_FROM_MAIN_QUERY,
                 tableName,
                 questionMarks
         );
-        
+
         try (Connection conn = connectionFactory.getConnection()) {
             if (conn.getAutoCommit()) throw new IllegalStateException("Connection must have auto-commit disabled");
             try (PreparedStatement stmt = conn.prepareStatement(cancelFromPeriodicSql)) {
@@ -174,19 +179,21 @@ class BookModel<T extends Connection> {
                             //If negative, time is a relative delay
                             : nowEpochMs - booking.getDueTimestamp();
                     stmt.setLong(place++, dueTimestamp);
-                    //expiry stmt.setLong(place++, -1L);
+                    stmt.setLong(place++, -1L);
                     stmt.setInt(place++, previousAttempts);
                     stmt.setString(place++, booking.getPayload());
                     stmt.setNull(place++, Types.NULL);
+                    stmt.setInt(place++, 0);
 
                     //FOR UPDATE
                     stmt.setObject(place++, booking.getAppointmentUid());
                     stmt.setLong(place++, nowEpochMs);
                     stmt.setLong(place++, dueTimestamp);
-                    //expiry stmt.setLong(place++, -1L);
+                    stmt.setLong(place++, -1L);
                     stmt.setInt(place++, previousAttempts);
                     stmt.setString(place++, booking.getPayload());
                     stmt.setNull(place++, Types.NULL);
+                    stmt.setInt(place++, 0);
 
                     if (extraColumnsList != null) {
                         for (int i = 0; i < extraColumnsList.size(); i++) {
@@ -210,7 +217,6 @@ class BookModel<T extends Connection> {
             String periodicTableName,
             ConnectionFactory<?> connectionFactory,
             Clock clock,
-            int previousAttempts,
             List<PeriodicAppointmentBooking> periodicBookings
     ) throws Exception {
 
@@ -220,20 +226,18 @@ class BookModel<T extends Connection> {
             if (conn.getAutoCommit()) throw new IllegalStateException("Connection must have auto-commit disabled");
 
             ArrayList<Map.Entry<String, ?>> extraColumnsList;
-            for (PeriodicAppointmentBooking periodicBooking : periodicBookings) {
+            for (PeriodicAppointmentBooking periodic : periodicBookings) {
 
-                if (periodicBooking.getExtraParams() != null) {
-                    extraColumnsList = new ArrayList<>(periodicBooking.getExtraParams().entrySet());
+                if (periodic.getExtraParams() != null) {
+                    extraColumnsList = new ArrayList<>(periodic.getExtraParams().entrySet());
                 } else {
                     extraColumnsList = null;
                 }
                 String extraColumnsNames = buildExtraColumnsNames(extraColumnsList);
                 String extraColumnsQuestionMarks = buildExtraColumnsQuestionMarks(extraColumnsList);
                 String bookSql = String.format(
-                        BOOK_INSERT_QUERY,
+                        BOOK_INSERT_DONT_UPDATE_QUERY,
                         tableName,
-                        extraColumnsNames,
-                        extraColumnsQuestionMarks,
                         extraColumnsNames,
                         extraColumnsQuestionMarks
                 );
@@ -242,15 +246,8 @@ class BookModel<T extends Connection> {
                         PERIODIC_BOOK_INSERT_QUERY,
                         periodicTableName,
                         extraColumnsNames,
-                        extraColumnsQuestionMarks,
-                        extraColumnsNames,
                         extraColumnsQuestionMarks
                 );
-
-                long firstDueTimestamp = getFirstDueTimestamp(periodicBooking, nowEpochMs);
-                UUID iterationUid = UUIDType5.nameUUIDFromCustomString(
-                        periodicBooking.getAppointmentUid()
-                                + "_" + firstDueTimestamp);
 
                 //Insert periodic booking
                 try (PreparedStatement stmt = conn.prepareStatement(periodicBookSql)) {
@@ -258,12 +255,12 @@ class BookModel<T extends Connection> {
                     int place = 1;
 
                     //FOR INSERT
-                    stmt.setObject(place++, periodicBooking.getAppointmentUid());
+                    stmt.setObject(place++, periodic.getAppointmentUid());
                     stmt.setLong(place++, nowEpochMs);
-                    stmt.setInt(place++, periodicBooking.getPatternType().getId());
-                    stmt.setString(place++, periodicBooking.getPattern());
-                    stmt.setString(place++, periodicBooking.getPayload());
-                    stmt.setBoolean(place++, periodicBooking.isSkipMissed());
+                    stmt.setInt(place++, periodic.getPatternType().getId());
+                    stmt.setString(place++, periodic.getPattern());
+                    stmt.setString(place++, periodic.getPayload());
+                    stmt.setBoolean(place++, periodic.isSkipMissed());
 
                     if (extraColumnsList != null) {
                         for (int i = 0; i < extraColumnsList.size(); i++) {
@@ -277,55 +274,68 @@ class BookModel<T extends Connection> {
                     }
                     stmt.execute();
                     if (stmt.getUpdateCount() == 0) {
-                        throw new ConflictingPeriodicBookingException(periodicBooking.getAppointmentUid());
+                        throw new ConflictingPeriodicBookingException(periodic.getAppointmentUid());
                     }
                 }
 
-                //Add first iteration
+                //Add first N iterations
                 try (PreparedStatement stmt = conn.prepareStatement(bookSql)) {
-
-                    int place = 1;
-                    //FOR INSERT
-                    stmt.setObject(place++, iterationUid);
-                    stmt.setLong(place++, nowEpochMs);
-                    stmt.setLong(place++, firstDueTimestamp);
-                    stmt.setInt(place++, previousAttempts);
-                    stmt.setString(place++, periodicBooking.getPayload());
-                    stmt.setObject(place++, periodicBooking.getAppointmentUid());
-
-                    //FOR UPDATE
-                    stmt.setObject(place++, iterationUid);
-                    stmt.setLong(place++, nowEpochMs);
-                    stmt.setLong(place++, firstDueTimestamp);
-                    stmt.setInt(place++, previousAttempts);
-                    stmt.setString(place++, periodicBooking.getPayload());
-                    stmt.setObject(place++, periodicBooking.getAppointmentUid());
-
-                    if (extraColumnsList != null) {
-                        for (int i = 0; i < extraColumnsList.size(); i++) {
-                            Object value = extraColumnsList.get(i).getValue();
-                            if (value != null) {
-                                stmt.setObject(place++, value);
-                            } else {
-                                stmt.setNull(place++, Types.NULL);
-                            }
-                        }
-                    }
-                    stmt.execute();
+                    List<Long> dueTimestamps = getFirstDueTimestamps(periodic, nowEpochMs, MAX_POLL_PERIODIC_FREQ_RATIO);
+                    insertPeriodicIterations(periodic, dueTimestamps, stmt, extraColumnsList, nowEpochMs);
                 }
+
             }
             conn.commit();
         }
     }
 
-    static void bookNextIteration(
+    private static void insertPeriodicIterations(PeriodicAppointmentBooking periodic, List<Long> dueTimestamps, PreparedStatement stmt, ArrayList<Map.Entry<String, ?>> extraColumnsList, long nowEpochMs) throws SQLException {
+        long dueTimestamp;
+        UUID iterationUid;
+        int flags;
+        if (periodic.isSkipMissed()) {
+            flags = AjendaFlags.withFlags(AjendaFlags.SKIP_MISSED_FLAG);
+        } else {
+            flags = AjendaFlags.withFlags();
+        }
+        
+        for (int i = 0; i < dueTimestamps.size() - 1; i++) {
+
+            dueTimestamp = dueTimestamps.get(i);
+
+            iterationUid = UUIDType5.nameUUIDFromCustomString(
+                    periodic.getAppointmentUid()
+                            + "_" + dueTimestamp);
+
+            setQueryParameters(nowEpochMs, periodic, extraColumnsList, stmt, dueTimestamp, iterationUid,
+                    flags);
+            stmt.addBatch();
+        }
+
+        flags = AjendaFlags.addFlags(flags, AjendaFlags.GEN_NEXT_FLAG);
+
+        dueTimestamp = dueTimestamps.get(dueTimestamps.size() - 1);
+        iterationUid = UUIDType5.nameUUIDFromCustomString(
+                periodic.getAppointmentUid()
+                        + "_" + dueTimestamp);
+
+        setQueryParameters(nowEpochMs, periodic, extraColumnsList, stmt, dueTimestamp, iterationUid,
+                flags);
+        stmt.addBatch();
+
+        stmt.executeBatch();
+    }
+
+    static void bookNextIterations(
             AppointmentDue appointmentDue,
             String tableName,
             String periodicTableName,
             Connection conn,
             long nowEpochMs) throws Exception {
 
-        if (appointmentDue.getPeriodicAppointmentUid() != null) {
+        if (appointmentDue.getPeriodicAppointmentUid() != null
+                && AjendaFlags.isGenNext(appointmentDue.getFlags())) {
+
             PeriodicAppointmentBooking periodic = null;
             String getPeriodic = String.format(
                     PERIODIC_BOOK_SELECT_QUERY,
@@ -352,73 +362,75 @@ class BookModel<T extends Connection> {
                 String extraColumnsNames = buildExtraColumnsNames(extraColumnsList);
                 String extraColumnsQuestionMarks = buildExtraColumnsQuestionMarks(extraColumnsList);
                 String bookSql = String.format(
-                        BOOK_INSERT_QUERY,
+                        BOOK_INSERT_DONT_UPDATE_QUERY,
                         tableName,
-                        extraColumnsNames,
-                        extraColumnsQuestionMarks,
                         extraColumnsNames,
                         extraColumnsQuestionMarks
                 );
                 try (PreparedStatement stmt = conn.prepareStatement(bookSql)) {
-                    int place = 1;
 
-                    long dueTimestamp = getNextDueTimestamp(
+                    List<Long> dueTimestamps = getNextDueTimestamps(
                             periodic,
                             nowEpochMs,
-                            appointmentDue.getDueTimestamp()
+                            appointmentDue.getDueTimestamp(),
+                            MAX_POLL_PERIODIC_FREQ_RATIO,
+                            new ArrayList<>(MAX_POLL_PERIODIC_FREQ_RATIO)
                     );
 
-                    UUID iterationUid = UUIDType5.nameUUIDFromCustomString(
-                            periodic.getAppointmentUid()
-                                    + "_" + dueTimestamp);
-
-                    //FOR INSERT
-                    stmt.setObject(place++, iterationUid);
-                    stmt.setLong(place++, nowEpochMs);
-                    stmt.setLong(place++, dueTimestamp);
-                    stmt.setInt(place++, 0);
-                    stmt.setString(place++, periodic.getPayload());
-                    stmt.setObject(place++, periodic.getAppointmentUid());
-
-                    //FOR UPDATE
-                    stmt.setObject(place++, iterationUid);
-                    stmt.setLong(place++, nowEpochMs);
-                    stmt.setLong(place++, dueTimestamp);
-                    stmt.setInt(place++, 0);
-                    stmt.setString(place++, periodic.getPayload());
-                    stmt.setObject(place++, periodic.getAppointmentUid());
-
-                    if (extraColumnsList != null) {
-                        for (int i = 0; i < extraColumnsList.size(); i++) {
-                            Object value = extraColumnsList.get(i).getValue();
-                            if (value != null) {
-                                stmt.setObject(place++, value);
-                            } else {
-                                stmt.setNull(place++, Types.NULL);
-                            }
-                        }
-                    }
-                    stmt.execute();
+                    insertPeriodicIterations(periodic, dueTimestamps, stmt, extraColumnsList, nowEpochMs);
                 }
             }
         }
     }
 
-    private static long getFirstDueTimestamp(PeriodicAppointmentBooking bookings, long nowEpochMs) {
-        long firstExecutionTimestamp = bookings.getStartTimestamp() > 0 ?
-                bookings.getStartTimestamp()
-                //If negative, time is a relative delay
-                : nowEpochMs - bookings.getStartTimestamp();
+    private static void setQueryParameters(
+            long nowEpochMs,
+            PeriodicAppointmentBooking periodic,
+            ArrayList<Map.Entry<String, ?>> extraColumnsList,
+            PreparedStatement stmt,
+            long dueTimestamp,
+            UUID iterationUid,
+            int flags) throws SQLException {
+        int place = 1;
 
-        if (bookings.isSkipMissed() && firstExecutionTimestamp < nowEpochMs) {
+        //FOR INSERT
+        stmt.setObject(place++, iterationUid);
+        stmt.setLong(place++, nowEpochMs);
+        stmt.setLong(place++, dueTimestamp);
+        stmt.setLong(place++, -1L);
+        stmt.setInt(place++, 0);
+        stmt.setString(place++, periodic.getPayload());
+        stmt.setObject(place++, periodic.getAppointmentUid());
+        stmt.setInt(place++, flags);
+
+        if (extraColumnsList != null) {
+            for (int j = 0; j < extraColumnsList.size(); j++) {
+                Object value = extraColumnsList.get(j).getValue();
+                if (value != null) {
+                    stmt.setObject(place++, value);
+                } else {
+                    stmt.setNull(place++, Types.NULL);
+                }
+            }
+        }
+    }
+
+    private static List<Long> getFirstDueTimestamps(PeriodicAppointmentBooking booking, long nowEpochMs, int size) {
+        List<Long> timestamps = new ArrayList<>();
+
+        long firstExecutionTimestamp = booking.getStartTimestamp() > 0 ?
+                booking.getStartTimestamp()
+                //If negative, time is a relative delay
+                : nowEpochMs - booking.getStartTimestamp();
+
+        if (booking.isSkipMissed() && firstExecutionTimestamp < nowEpochMs) {
             firstExecutionTimestamp = nowEpochMs;
         }
 
-        if (bookings.getPatternType() == PeriodicPatternType.FIXED_RATE || bookings.getPatternType() == PeriodicPatternType.FIXED_DELAY) {
-            return firstExecutionTimestamp;
-        } else {
+        if (booking.getPatternType() != PeriodicPatternType.FIXED_RATE
+                && booking.getPatternType() != PeriodicPatternType.FIXED_DELAY) {
             CronType cronType;
-            switch (bookings.getPatternType()) {
+            switch (booking.getPatternType()) {
                 case CRON_CRON4J:
                     cronType = CronType.CRON4J;
                     break;
@@ -434,33 +446,50 @@ class BookModel<T extends Connection> {
                     break;
             }
 
-            return ExecutionTime.forCron(
-                    new CronParser(
-                            CronDefinitionBuilder.instanceDefinitionFor(cronType))
-                            .parse(bookings.getPattern())).nextExecution(
-                    ZonedDateTime.ofInstant(
-                            Instant.ofEpochMilli(firstExecutionTimestamp), ZoneOffset.UTC))
-                    .orElse(
-                            ZonedDateTime.ofInstant(
-                                    Instant.ofEpochMilli(Long.MAX_VALUE), ZoneOffset.UTC)).toInstant().toEpochMilli();
+            firstExecutionTimestamp = getCronNextDueTimestamp(booking, cronType, firstExecutionTimestamp);
         }
+
+        timestamps.add(firstExecutionTimestamp);
+        return getNextDueTimestamps(booking, nowEpochMs, firstExecutionTimestamp, size - 1, timestamps);
 
     }
 
-    private static long getNextDueTimestamp(PeriodicAppointmentBooking bookings, long nowEpochMs, long previousDueDate) {
+    private static List<Long> getNextDueTimestamps(
+            PeriodicAppointmentBooking bookings,
+            long nowEpochMs,
+            long previousDueDate,
+            int size,
+            List<Long> timestamps) {
+
+        if (size <= 0) return timestamps;
+
         if (bookings.getPatternType() == PeriodicPatternType.FIXED_RATE) {
-            long rate = Long.parseLong(bookings.getPattern());
+            long rate = Long.parseLong(bookings.getPattern(), 16);
             if (bookings.isSkipMissed()) {
-                return previousDueDate +
+                long due = previousDueDate +
                         Math.max(1L,
                                 Math.round(0.5 + (nowEpochMs - previousDueDate) / (double) rate))
                                 * rate;
+                timestamps.add(due);
+                long nextDue = due;
+                while (//nextDue < nowEpochMs + size * lookAhead &&
+                        timestamps.size() < size) {
+                    nextDue += rate;
+                    timestamps.add(nextDue);
+                }
             } else {
-                return previousDueDate + rate;
+                long due = previousDueDate + rate;
+                timestamps.add(due);
+                long nextDue = due + rate;
+                while (//nextDue < nowEpochMs + size * lookAhead &&
+                        timestamps.size() < size) {
+                    timestamps.add(nextDue);
+                    nextDue += rate;
+                }
             }
         } else if (bookings.getPatternType() == PeriodicPatternType.FIXED_DELAY) {
-            long rate = Long.parseLong(bookings.getPattern());
-            return nowEpochMs + rate;
+            long rate = Long.parseLong(bookings.getPattern(), 16);
+            timestamps.add(nowEpochMs + rate);
         } else {
             CronType cronType;
             switch (bookings.getPatternType()) {
@@ -479,21 +508,41 @@ class BookModel<T extends Connection> {
                     break;
             }
 
-            long referenceTimestamp = bookings.isSkipMissed() ?
-                    nowEpochMs
-                    : previousDueDate;
-
-            return ExecutionTime.forCron(
-                    new CronParser(
-                            CronDefinitionBuilder.instanceDefinitionFor(cronType))
-                            .parse(bookings.getPattern())).nextExecution(
-                    ZonedDateTime.ofInstant(
-                            Instant.ofEpochMilli(referenceTimestamp), ZoneOffset.UTC))
-                    .orElse(
-                            ZonedDateTime.ofInstant(
-                                    Instant.ofEpochMilli(Long.MAX_VALUE), ZoneOffset.UTC)).toInstant().toEpochMilli();
+            if (bookings.isSkipMissed()) {
+                long due = getCronNextDueTimestamp(bookings, cronType, nowEpochMs);
+                timestamps.add(due);
+                long nextDue = due;
+                while (//nextDue < nowEpochMs + size * lookAhead &&
+                        timestamps.size() < size) {
+                    nextDue = getCronNextDueTimestamp(bookings, cronType, nextDue);
+                    timestamps.add(nextDue);
+                }
+            } else {
+                long due = getCronNextDueTimestamp(bookings, cronType, previousDueDate);
+                timestamps.add(due);
+                long nextDue = getCronNextDueTimestamp(bookings, cronType, due);
+                while (//nextDue < nowEpochMs + size * lookAhead &&
+                        timestamps.size() < size) {
+                    timestamps.add(nextDue);
+                    nextDue = getCronNextDueTimestamp(bookings, cronType, nextDue);
+                }
+            }
         }
 
+        return timestamps;
+
+    }
+
+    private static long getCronNextDueTimestamp(PeriodicAppointmentBooking bookings, CronType cronType, long referenceTimestamp) {
+        return ExecutionTime.forCron(
+                new CronParser(
+                        CronDefinitionBuilder.instanceDefinitionFor(cronType))
+                        .parse(bookings.getPattern())).nextExecution(
+                ZonedDateTime.ofInstant(
+                        Instant.ofEpochMilli(referenceTimestamp), ZoneOffset.UTC))
+                .orElse(
+                        ZonedDateTime.ofInstant(
+                                Instant.ofEpochMilli(Long.MAX_VALUE), ZoneOffset.UTC)).toInstant().toEpochMilli();
     }
 
     private static String buildExtraColumnsQuestionMarks(ArrayList<Map.Entry<String, ?>> extraColumns) {

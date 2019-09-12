@@ -29,6 +29,7 @@ public class TestAtMostOnce {
     @Before
     public void clearDB() throws SQLException {
         dataSource = new TestDataSource(pg.getEmbeddedPostgres().getPostgresDatabase());
+        System.out.println("POSTGRES PORT: " + pg.getEmbeddedPostgres().getPort());
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(false);
             try (Statement statement = connection.createStatement()) {
@@ -307,7 +308,7 @@ public class TestAtMostOnce {
         Assert.assertEquals(10, read.size());
 
     }
-
+    
     @org.junit.Test
     public void test_cancel_periodic_appointment() throws Exception {
         String topic = "prueba";
@@ -323,6 +324,11 @@ public class TestAtMostOnce {
         ArrayList<AppointmentDue> read = new ArrayList<>();
         scheduler.checkAgenda().withFetchSize(10).periodically(100)
                 .readAtMostOnce(false, false, e -> {
+                    System.out.println(e.getDueTimestamp() 
+                            + "( " + (System.currentTimeMillis() - e.getDueTimestamp()) +" ) "
+                            + e.getAppointmentUid()
+                            +" " + Thread.currentThread().getId()
+                    );
                     read.add(e);
                 });
 
@@ -336,9 +342,10 @@ public class TestAtMostOnce {
 
         Thread.sleep(2750);
         Assert.assertEquals(6, read.size());
-
+        
         scheduler.cancelPeriodic(periodicUid);
-
+        //Already scheduled iterations leaks through
+        //Timing is tricky, improve test
         Thread.sleep(2000);
         Assert.assertEquals(6, read.size());
 

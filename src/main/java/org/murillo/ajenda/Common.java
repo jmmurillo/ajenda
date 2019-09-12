@@ -19,8 +19,8 @@ import java.util.concurrent.TimeUnit;
 public class Common {
     public static String getTableNameForTopic(String topic) {
         return String.format("ajenda_%s", topic).toLowerCase(Locale.ENGLISH);
-    }    
-    
+    }
+
     public static String getPeriodicTableNameForTopic(String topic) {
         return String.format("periodic_ajenda_%s", topic).toLowerCase(Locale.ENGLISH);
     }
@@ -60,6 +60,7 @@ public class Common {
         int attempts = 0;
         String payload = null;
         UUID periodicAppointmentUid = null;
+        int flags = 0;
         HashMap<String, Object> extraParams = new HashMap<>();
 
         for (int i = 1; i <= metaData.getColumnCount(); i++) {
@@ -88,6 +89,9 @@ public class Common {
                             UUID.fromString(rs.getString(i))
                             : null;
                     break;
+                case "flags":
+                    flags = rs.getInt(i);
+                    break;
                 default:
                     extraParams.put(metaData.getColumnName(i), rs.getObject(i));
                     break;
@@ -97,11 +101,11 @@ public class Common {
         return new AppointmentDue(
                 uuid,
                 due_date,
-                nowEpoch,
                 payload,
                 attempts,
                 extraParams.isEmpty() ? null : extraParams,
-                periodicAppointmentUid
+                periodicAppointmentUid,
+                flags
         );
     }
 

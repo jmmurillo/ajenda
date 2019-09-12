@@ -18,7 +18,8 @@ public class InitializationModel {
                     + "expiry_date      BIGINT, "
                     + "attempts         INTEGER, "
                     + "payload          TEXT, "
-                    + "periodic_uuid    UUID "
+                    + "periodic_uuid    UUID, "
+                    + "flags            INTEGER "
                     + ") WITH (fillfactor = 70) ";
 
     public static final String TABLE_FOR_PERIODIC_TOPIC_QUERY =
@@ -66,6 +67,7 @@ public class InitializationModel {
                 ensureColumnAndType(columnsForTable, tableName, "attempts", "INTEGER");
                 ensureColumnAndType(columnsForTable, tableName, "payload", "TEXT");
                 ensureColumnAndType(columnsForTable, tableName, "periodic_uuid", "UUID");
+                ensureColumnAndType(columnsForTable, tableName, "flags", "INTEGER");
 
                 stmt.execute(createPeriodicTableSql);
                 //Assert periodic table exists and has expected columns

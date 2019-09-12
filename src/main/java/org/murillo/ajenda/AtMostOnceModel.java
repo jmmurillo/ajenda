@@ -42,7 +42,7 @@ class AtMostOnceModel {
 
     public static void process(
             AjendaScheduler ajendaScheduler,
-            long pollPeriod,
+            long lookAhead,
             int limitSize,
             long nowEpoch,
             boolean onlyLate,
@@ -56,18 +56,22 @@ class AtMostOnceModel {
             if (minSize <= 0) return;
             scheduleNoAck(
                     ajendaScheduler,
+                    lookAhead,
                     nowEpoch,
+                    onlyLate,
                     reBookOnException,
                     blocking,
                     listener,
-                    selectAndDelete(ajendaScheduler, pollPeriod, minSize, nowEpoch, onlyLate, customSqlCondition)
+                    selectAndDelete(ajendaScheduler, lookAhead, minSize, nowEpoch, onlyLate, customSqlCondition)
             );
         }
     }
 
     private static void scheduleNoAck(
             AjendaScheduler ajendaScheduler,
+            long lookAhead, 
             long nowEpoch,
+            boolean onlyLate,
             boolean reBookOnException,
             boolean blocking,
             SimpleAppointmentListener listener,
@@ -82,8 +86,14 @@ class AtMostOnceModel {
                 try {
                     ajendaScheduler.getExecutor()
                             .schedule(() -> {
+                                
                                         try {
-                                            listener.receive(appointmentDue);
+                                            if(delay >= (onlyLate ? 0: -lookAhead) 
+                                                    || !AjendaFlags.isSkipMissed(appointmentDue.getFlags())) {
+                                                ajendaScheduler.addBeganToProcess(appointmentDue.getDueTimestamp());
+                                                listener.receive(appointmentDue);
+                                                ajendaScheduler.addProcessed(1);
+                                            }
                                         } catch (UnhandledAppointmentException ex) {
                                             if (reBookOnException) {
                                                 reBook(ajendaScheduler, appointmentDue);
@@ -121,10 +131,9 @@ class AtMostOnceModel {
                 .withDueTimestamp(appointmentDue.getDueTimestamp())
                 .withPayload(appointmentDue.getPayload());
         if (appointmentDue.getExtraParams() != null) {
-            appointmentDue.getExtraParams().forEach((k, v) -> {
-                builder.withExtraParam(k, v);
-            });
+            appointmentDue.getExtraParams().forEach((k, v) -> builder.withExtraParam(k, v));
         }
+        //TODO keep periodic_uid or not ?
         try {
             BookModel.book(
                     ajendaScheduler.getTableNameWithSchema(),
@@ -141,14 +150,14 @@ class AtMostOnceModel {
 
     private synchronized static List<AppointmentDue> selectAndDelete(
             AjendaScheduler ajendaScheduler,
-            long pollPeriod,
+            long lookAhead,
             int limitSize,
             long nowEpoch,
             boolean onlyLate,
             String customSqlCondition) throws Exception {
 
         String tableName = ajendaScheduler.getTableNameWithSchema();
-        long limitDueDate = onlyLate ? nowEpoch : nowEpoch + pollPeriod;
+        long limitDueDate = onlyLate ? nowEpoch : nowEpoch + lookAhead;
 
         String sql = String.format(
                 AT_MOST_ONCE_QUERY,
@@ -169,7 +178,7 @@ class AtMostOnceModel {
                 ResultSet resultSet = stmt.executeQuery();
                 while (resultSet.next()) {
                     AppointmentDue appointmentDue = extractAppointmentDue(resultSet, nowEpoch);
-                    BookModel.bookNextIteration(
+                    BookModel.bookNextIterations(
                             appointmentDue,
                             ajendaScheduler.getTableNameWithSchema(),
                             ajendaScheduler.getPeriodicTableNameWithSchema(),
@@ -178,6 +187,7 @@ class AtMostOnceModel {
                     appointments.add(appointmentDue);
                 }
                 conn.commit();
+                ajendaScheduler.addRead(appointments.size());
             }
         }
         return appointments;

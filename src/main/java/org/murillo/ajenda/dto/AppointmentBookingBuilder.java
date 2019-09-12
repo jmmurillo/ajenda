@@ -10,7 +10,7 @@ public final class AppointmentBookingBuilder {
     private static final UUID UUID_ZERO = new UUID(0L, 0L);
 
     private UUID appointmentUid;
-    private long dueTimestamp;
+    private long dueTimestamp = 0;
     private String payload;
     private HashMap<String, Object> extraParams = new HashMap<>();
 
