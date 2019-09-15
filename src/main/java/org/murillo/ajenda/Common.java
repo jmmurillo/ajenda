@@ -56,7 +56,8 @@ public class Common {
         UUID uuid = null;
         long creation_date = 0;
         long due_date = 0;
-        long expiry_date = 0;
+        int ttl = 0;
+        long timeout_date = 0;
         int attempts = 0;
         String payload = null;
         UUID periodicAppointmentUid = null;
@@ -74,8 +75,11 @@ public class Common {
                 case "due_date":
                     due_date = rs.getLong(i);
                     break;
-                case "expiry_date":
-                    expiry_date = rs.getLong(i);
+                case "ttl":
+                    ttl = rs.getInt(i);
+                    break;
+                case "timeout_date":
+                    timeout_date = rs.getLong(i);
                     break;
                 case "attempts":
                     attempts = rs.getInt(i);
@@ -101,6 +105,7 @@ public class Common {
         return new AppointmentDue(
                 uuid,
                 due_date,
+                ttl,
                 payload,
                 attempts,
                 extraParams.isEmpty() ? null : extraParams,
@@ -115,7 +120,9 @@ public class Common {
         long creation_date = 0;
         PeriodicPatternType pattern_type = null;
         String pattern = null;
+        int ttl = 0;
         String payload = null;
+        int key_iteration = 1;
         boolean skip_missed = true;
         HashMap<String, Object> extraParams = new HashMap<>();
 
@@ -133,8 +140,14 @@ public class Common {
                 case "pattern":
                     pattern = rs.getString(i);
                     break;
+                case "ttl":
+                    ttl = rs.getInt(i);
+                    break;
                 case "payload":
                     payload = rs.getString(i);
+                    break;
+                case "key_iteration":
+                    key_iteration = rs.getInt(i);
                     break;
                 case "skip_missed":
                     skip_missed = rs.getBoolean(i);
@@ -149,8 +162,10 @@ public class Common {
                 uuid,
                 pattern_type,
                 pattern,
+                ttl,
                 payload,
                 extraParams.isEmpty() ? null : extraParams,
+                key_iteration,
                 skip_missed,
                 -1L
         );

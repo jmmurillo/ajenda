@@ -29,15 +29,15 @@ class AtLeastOnceModel {
     private static final String AT_LEAST_ONCE_ACKED_QUERY =
             "UPDATE %s "
                     + "SET "
-                    + "  expiry_date = GREATEST(due_date, ?) + ?,"
+                    + "  timeout_date = GREATEST(due_date, ?) + ?,"
                     + "  attempts = attempts + 1 "
                     + "WHERE uuid = any(array("
                     + "  SELECT uuid "
                     + "  FROM %s "
                     + "  WHERE due_date <= ? "
-                    + "    AND expiry_date <= ? "
+                    + "    AND timeout_date <= ? "
                     + "    AND %s "  //CUSTOM CONDITION
-                    + "  ORDER BY due_date, expiry_date "
+                    + "  ORDER BY due_date, timeout_date "
                     + "  FETCH FIRST ? ROWS ONLY "
                     + "  FOR UPDATE SKIP LOCKED "
                     + ")) RETURNING *";
@@ -115,32 +115,35 @@ class AtLeastOnceModel {
                 long delay = a.getDueTimestamp() - nowEpoch;
                 CancelFlag cancelFlag = new CancelFlag();
                 final ScheduledFuture<?> future = ajendaScheduler.getExecutor().schedule(() -> {
-                    try{
                             try {
-                                ajendaScheduler.addBeganToProcess(a.getDueTimestamp());
-                                listener.receive(a, cancelFlag);
-                                ajendaScheduler.addProcessed(1);
-                            } catch (UnhandledAppointmentException th) {
-                                //Controlled exception
-                                return;
-                            } catch (Throwable th) {
-                                //Unexpected exception
-                                //TODO log
-                                th.printStackTrace();
-                                return;
-                            }
-                            try {
-                                ackIndividually(
-                                        ajendaScheduler,
-                                        tableName,
-                                        a,
-                                        lookAhead,
-                                        cancelFlag);
-                            } catch (Throwable th) {
-                                //TODO log
-                                th.printStackTrace();
-                                return;
-                            }
+                                try {
+                                    if (isNotExpired(ajendaScheduler, a)
+                                            && isNotMissed(a, delay)) {
+                                        ajendaScheduler.addBeganToProcess(a.getDueTimestamp());
+                                        listener.receive(a, cancelFlag);
+                                        ajendaScheduler.addProcessed(1);
+                                    }
+                                } catch (UnhandledAppointmentException th) {
+                                    //Controlled exception
+                                    return;
+                                } catch (Throwable th) {
+                                    //Unexpected exception
+                                    //TODO log
+                                    th.printStackTrace();
+                                    return;
+                                }
+                                try {
+                                    ackIndividually(
+                                            ajendaScheduler,
+                                            tableName,
+                                            a,
+                                            lookAhead,
+                                            cancelFlag);
+                                } catch (Throwable th) {
+                                    //TODO log
+                                    th.printStackTrace();
+                                    return;
+                                }
                             } finally {
                                 if (blocking) semaphore.release();
                             }
@@ -180,15 +183,16 @@ class AtLeastOnceModel {
                 long delay = a.getDueTimestamp() - nowEpoch;
                 CancelFlag cancelFlag = new CancelFlag();
                 final ScheduledFuture<?> future = ajendaScheduler.getExecutor().schedule(() -> {
-                    
+
                             try {
-                                if(!cancelFlag.isCancelled()) executeAndAck(
+                                if (!cancelFlag.isCancelled()) executeAndAck(
                                         ajendaScheduler,
                                         tableName,
                                         listener,
                                         a,
                                         lookAhead,
-                                        cancelFlag
+                                        cancelFlag,
+                                        delay
                                 );
                             } catch (Throwable th) {
                                 //TODO log
@@ -225,7 +229,7 @@ class AtLeastOnceModel {
                         ajendaScheduler.getPeriodicTableNameWithSchema(),
                         conn,
                         ajendaScheduler.getClock().nowEpochMs());
-                if(!cancelFlag.isCancelled()) conn.commit();
+                if (!cancelFlag.isCancelled()) conn.commit();
             }
         }
     }
@@ -236,7 +240,7 @@ class AtLeastOnceModel {
             TransactionalAppointmentListener listener,
             AppointmentDue appointmentDue,
             long lookAhead,
-            CancelFlag cancelFlag) throws Exception {
+            CancelFlag cancelFlag, long delay) throws Exception {
         try (Connection conn = ajendaScheduler.getConnection()) {
             String sql = String.format(ACK_ONE_QUERY, tableName);
             final long nowEpoch = ajendaScheduler.getClock().nowEpochMs();
@@ -251,16 +255,19 @@ class AtLeastOnceModel {
                         nowEpoch);
             }
             try {
-                ajendaScheduler.addBeganToProcess(appointmentDue.getDueTimestamp());
-                listener.receive(appointmentDue, cancelFlag, new AbstractAjendaBooker(ajendaScheduler) {
-                    @Override
-                    public Connection getConnection() {
-                        return conn;
+                if (isNotExpired(ajendaScheduler, appointmentDue)
+                        && isNotMissed(appointmentDue, delay)) {
+                    ajendaScheduler.addBeganToProcess(appointmentDue.getDueTimestamp());
+                    listener.receive(appointmentDue, cancelFlag, new AbstractAjendaBooker(ajendaScheduler) {
+                        @Override
+                        public Connection getConnection() {
+                            return conn;
+                        }
+                    });
+                    if (!cancelFlag.isCancelled()) {
+                        conn.commit();
+                        ajendaScheduler.addProcessed(1);
                     }
-                });
-                if(!cancelFlag.isCancelled()) {
-                    conn.commit();
-                    ajendaScheduler.addProcessed(1);
                 }
             } catch (UnhandledAppointmentException th) {
                 //Controlled error
@@ -312,6 +319,17 @@ class AtLeastOnceModel {
             }
         }
         return appointments;
+    }
+
+    private static boolean isNotMissed(AppointmentDue appointmentDue, long delay) {
+        return delay >= 0
+                || !AjendaFlags.isSkipMissed(appointmentDue.getFlags());
+    }
+
+    private static boolean isNotExpired(AjendaScheduler ajendaScheduler, AppointmentDue appointmentDue) {
+        return appointmentDue.getTtl() <= 0
+                || (ajendaScheduler.getClock().nowEpochMs() - appointmentDue.getTtl()) <
+                appointmentDue.getDueTimestamp();
     }
 
 }

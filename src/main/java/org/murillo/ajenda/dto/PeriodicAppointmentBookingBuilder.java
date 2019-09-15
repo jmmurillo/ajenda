@@ -10,12 +10,16 @@ import java.util.Objects;
 import java.util.UUID;
 
 public final class PeriodicAppointmentBookingBuilder {
+    public static final int MAX_KEY_ITERATION = 1000;
+
     private UUID appointmentUid;
     private PeriodicPatternType patternType;
     private long startTimestamp = 0;
     private String pattern;
+    private int ttl;
     private String payload;
     private HashMap<String, Object> extraParams = new HashMap<>();
+    private int keyIteration = 1;
     private boolean skipMissed = true;
 
     private PeriodicAppointmentBookingBuilder() {
@@ -100,6 +104,12 @@ public final class PeriodicAppointmentBookingBuilder {
         return this;
     }
 
+    public PeriodicAppointmentBookingBuilder withTtl(int ttl){
+        if(ttl <= 0) this.ttl = 0;
+        else this.ttl = ttl;
+        return this;
+    }
+
     public PeriodicAppointmentBookingBuilder withPayload(String payload) {
         this.payload = payload;
         return this;
@@ -107,6 +117,13 @@ public final class PeriodicAppointmentBookingBuilder {
 
     public PeriodicAppointmentBookingBuilder withExtraParams(HashMap<String, Object> extraParams) {
         this.extraParams = extraParams;
+        return this;
+    }
+
+    public PeriodicAppointmentBookingBuilder withKeyIteration(int keyIteration) {
+        if (keyIteration > MAX_KEY_ITERATION
+        || keyIteration < 1) throw new IllegalArgumentException("keyIteration must be a positive integer lower than " + MAX_KEY_ITERATION);
+        this.keyIteration = keyIteration;
         return this;
     }
 
@@ -124,8 +141,7 @@ public final class PeriodicAppointmentBookingBuilder {
 
         if (patternType == null) throw new IllegalArgumentException("patternType must not be null");
         if (pattern == null) throw new IllegalArgumentException("pattern must not be null");
-        if (!skipMissed && Objects.equals(PeriodicPatternType.FIXED_DELAY, patternType))
-            throw new IllegalArgumentException("FIXED_DELAY type is incompatible with disabled skipMissed option");
+        if (Objects.equals(PeriodicPatternType.FIXED_DELAY, patternType)) skipMissed = false;
 
         PeriodicAppointmentBooking periodicAppointmentBooking = new PeriodicAppointmentBooking();
         periodicAppointmentBooking.setAppointmentUid(
@@ -134,8 +150,10 @@ public final class PeriodicAppointmentBookingBuilder {
                         : UUIDType5.nameUUIDFromCustomString(payload + "_" + patternType.name() + "_" + pattern));
         periodicAppointmentBooking.setPatternType(patternType);
         periodicAppointmentBooking.setPattern(pattern);
+        periodicAppointmentBooking.setTtl(ttl);
         periodicAppointmentBooking.setPayload(payload);
         periodicAppointmentBooking.setExtraParams(extraParams);
+        periodicAppointmentBooking.setKeyIteration(keyIteration);
         periodicAppointmentBooking.setSkipMissed(skipMissed);
         periodicAppointmentBooking.setStartTimestamp(startTimestamp);
 

@@ -33,9 +33,9 @@ class AtMostOnceModel {
                     + "  SELECT uuid "
                     + "  FROM %s "
                     + "  WHERE due_date <= ? "
-                    + "    AND expiry_date <= ? "
+                    + "    AND timeout_date <= ? "
                     + "    AND %s "  //CUSTOM CONDITION
-                    + "  ORDER BY due_date, expiry_date ASC "
+                    + "  ORDER BY due_date, timeout_date ASC "
                     + "  FETCH FIRST ? ROWS ONLY "
                     + "  FOR UPDATE SKIP LOCKED "
                     + ")) RETURNING *";
@@ -69,7 +69,7 @@ class AtMostOnceModel {
 
     private static void scheduleNoAck(
             AjendaScheduler ajendaScheduler,
-            long lookAhead, 
+            long lookAhead,
             long nowEpoch,
             boolean onlyLate,
             boolean reBookOnException,
@@ -86,10 +86,9 @@ class AtMostOnceModel {
                 try {
                     ajendaScheduler.getExecutor()
                             .schedule(() -> {
-                                
                                         try {
-                                            if(delay >= (onlyLate ? 0: -lookAhead) 
-                                                    || !AjendaFlags.isSkipMissed(appointmentDue.getFlags())) {
+                                            if (isNotExpired(ajendaScheduler, appointmentDue)
+                                                    && isNotMissed(lookAhead, onlyLate, appointmentDue, delay)) {
                                                 ajendaScheduler.addBeganToProcess(appointmentDue.getDueTimestamp());
                                                 listener.receive(appointmentDue);
                                                 ajendaScheduler.addProcessed(1);
@@ -123,6 +122,17 @@ class AtMostOnceModel {
         } finally {
             if (blocking) semaphore.acquire(scheduled);
         }
+    }
+
+    private static boolean isNotMissed(long lookAhead, boolean onlyLate, AppointmentDue appointmentDue, long delay) {
+        return delay >= (onlyLate ? -lookAhead : 0)
+                || !AjendaFlags.isSkipMissed(appointmentDue.getFlags());
+    }
+
+    private static boolean isNotExpired(AjendaScheduler ajendaScheduler, AppointmentDue appointmentDue) {
+        return appointmentDue.getTtl() <= 0
+                || (ajendaScheduler.getClock().nowEpochMs() - appointmentDue.getTtl()) <
+                appointmentDue.getDueTimestamp();
     }
 
     private static void reBook(AjendaScheduler ajendaScheduler, AppointmentDue appointmentDue) {

@@ -7,6 +7,7 @@ public class AppointmentDue {
 
     private UUID appointmentUid;
     private long dueTimestamp;
+    private int ttl;
     private String payload;
     private int attempts;
     private HashMap<String, ?> extraParams;
@@ -16,6 +17,7 @@ public class AppointmentDue {
     public AppointmentDue(
             UUID appointmentUid,
             long dueTimestamp,
+            int ttl,
             String payload,
             int attempts,
             HashMap<String, ?> extraParams,
@@ -24,6 +26,7 @@ public class AppointmentDue {
     ) {
         this.appointmentUid = appointmentUid;
         this.dueTimestamp = dueTimestamp;
+        this.ttl = ttl;
         this.payload = payload;
         this.attempts = attempts;
         this.extraParams = extraParams;
@@ -37,6 +40,10 @@ public class AppointmentDue {
 
     public long getDueTimestamp() {
         return dueTimestamp;
+    }
+
+    public int getTtl() {
+        return ttl;
     }
 
     public String getPayload() {
@@ -59,15 +66,19 @@ public class AppointmentDue {
         return flags;
     }
 
-    public void setAppointmentUid(UUID appointmentUid) {
+    void setAppointmentUid(UUID appointmentUid) {
         this.appointmentUid = appointmentUid;
     }
 
-    public void setDueTimestamp(long dueTimestamp) {
+    void setDueTimestamp(long dueTimestamp) {
         this.dueTimestamp = dueTimestamp;
     }
 
-    public void setPayload(String payload) {
+    void setTtl(int ttl) {
+        this.ttl = ttl;
+    }
+
+    void setPayload(String payload) {
         this.payload = payload;
     }
 
@@ -75,15 +86,15 @@ public class AppointmentDue {
         this.attempts = attempts;
     }
 
-    public void setExtraParams(HashMap<String, ?> extraParams) {
+    void setExtraParams(HashMap<String, ?> extraParams) {
         this.extraParams = extraParams;
     }
 
-    public void setPeriodicAppointmentUid(UUID periodicAppointmentUid) {
+    void setPeriodicAppointmentUid(UUID periodicAppointmentUid) {
         this.periodicAppointmentUid = periodicAppointmentUid;
     }
 
-    public void setFlags(int flags) {
+    void setFlags(int flags) {
         this.flags = flags;
     }
 

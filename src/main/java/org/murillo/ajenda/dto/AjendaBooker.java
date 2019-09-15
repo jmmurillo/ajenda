@@ -23,11 +23,15 @@ public interface AjendaBooker<T extends Connection> extends ConnectionFactory<T>
 
     void book(AppointmentBooking... bookings) throws Exception;
 
-    void bookPeriodic(PeriodicAppointmentBooking... bookings) throws Exception;    
-    
     void book(List<AppointmentBooking> bookings) throws Exception;
 
+    void bookPeriodic(PeriodicAppointmentBooking... bookings) throws Exception;
+
     void bookPeriodic(List<PeriodicAppointmentBooking> bookings) throws Exception;
+
+    void tryBookPeriodic(PeriodicAppointmentBooking... bookings) throws Exception;
+
+    void tryBookPeriodic(List<PeriodicAppointmentBooking> bookings) throws Exception;
 
     void cancel(UUID... uuids) throws Exception;
 

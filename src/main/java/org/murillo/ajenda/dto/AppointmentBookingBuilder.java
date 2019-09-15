@@ -11,6 +11,7 @@ public final class AppointmentBookingBuilder {
 
     private UUID appointmentUid;
     private long dueTimestamp = 0;
+    private int ttl = 0;
     private String payload;
     private HashMap<String, Object> extraParams = new HashMap<>();
 
@@ -54,6 +55,11 @@ public final class AppointmentBookingBuilder {
         return this;
     }
 
+    public AppointmentBookingBuilder withTtl(int ttl){
+        if(ttl <= 0) this.ttl = 0;
+        else this.ttl = ttl;
+        return this;
+    }
 
     public AppointmentBookingBuilder withPayload(String payload) {
         this.payload = payload;
@@ -68,6 +74,7 @@ public final class AppointmentBookingBuilder {
     public AppointmentBooking build() {
         AppointmentBooking appointmentBooking = new AppointmentBooking();
         appointmentBooking.setDueTimestamp(dueTimestamp);
+        appointmentBooking.setTtl(ttl);
         appointmentBooking.setPayload(payload);
         appointmentBooking.setAppointmentUid(
                 appointmentUid != null ?

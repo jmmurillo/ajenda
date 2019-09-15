@@ -38,7 +38,7 @@
 //        Assert.assertTrue(TestUtils.doesTableExist(dataSource, tableName));
 //        Assert.assertThat(
 //                TestUtils.getColumnNamesForTable(dataSource, tableName),
-//                CoreMatchers.hasItems("uuid", "creation_date", "due_date", "expiry_date", "attempts", "payload"));
+//                CoreMatchers.hasItems("uuid", "creation_date", "due_date", "timeout_date", "attempts", "payload"));
 //    }
 //
 //    @org.junit.Test
@@ -93,7 +93,7 @@
 //                        + "some_column      TEXT, "
 //                        + "creation_date    BIGINT, "
 //                        + "due_date         BIGINT, "
-//                        + "expiry_date      BIGINT, "
+//                        + "timeout_date      BIGINT, "
 //                        + "attempts         INTEGER, "
 //                        + "payload          TEXT,"
 //                        + "periodic_uuid             UUID)";

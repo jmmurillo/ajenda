@@ -7,6 +7,7 @@ public class AppointmentBooking {
 
     private UUID appointmentUid;
     private long dueTimestamp;
+    private int ttl;
     private String payload;
     private HashMap<String, Object> extraParams;
 
@@ -26,6 +27,14 @@ public class AppointmentBooking {
 
     void setDueTimestamp(long dueTimestamp) {
         this.dueTimestamp = dueTimestamp;
+    }
+
+    public int getTtl() {
+        return ttl;
+    }
+
+    public void setTtl(int ttl) {
+        this.ttl = ttl;
     }
 
     public String getPayload() {

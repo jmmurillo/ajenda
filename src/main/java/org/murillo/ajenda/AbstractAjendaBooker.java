@@ -107,7 +107,24 @@ public abstract class AbstractAjendaBooker<T extends Connection> implements Ajen
                 this.getPeriodicTableNameWithSchema(),
                 this,
                 this.getClock(),
-                bookings);
+                bookings,
+                false);
+    }
+
+    @Override
+    public void tryBookPeriodic(PeriodicAppointmentBooking... bookings) throws Exception {
+        tryBookPeriodic(Arrays.asList(bookings));
+    }
+
+    @Override
+    public void tryBookPeriodic(List<PeriodicAppointmentBooking> bookings) throws Exception {
+        BookModel.bookPeriodic(
+                this.getTableNameWithSchema(),
+                this.getPeriodicTableNameWithSchema(),
+                this,
+                this.getClock(),
+                bookings,
+                true);
     }
 
     @Override

@@ -8,8 +8,10 @@ public class PeriodicAppointmentBooking {
     private UUID appointmentUid;
     private PeriodicPatternType patternType;
     private String pattern;
+    private int ttl;
     private String payload;
     private HashMap<String, Object> extraParams;
+    private int keyIteration;
     private boolean skipMissed;
     private long startTimestamp;
 
@@ -20,16 +22,20 @@ public class PeriodicAppointmentBooking {
             (UUID appointmentUid,
              PeriodicPatternType patternType,
              String pattern,
+             int ttl,
              String payload,
              HashMap<String, Object> extraParams,
+             int keyIteration,
              boolean skipMissed,
              long startTimestamp) {
 
         this.appointmentUid = appointmentUid;
         this.patternType = patternType;
         this.pattern = pattern;
+        this.ttl = ttl;
         this.payload = payload;
         this.extraParams = extraParams;
+        this.keyIteration = keyIteration;
         this.skipMissed = skipMissed;
         this.startTimestamp = startTimestamp;
     }
@@ -38,55 +44,71 @@ public class PeriodicAppointmentBooking {
         return appointmentUid;
     }
 
-    public void setAppointmentUid(UUID appointmentUid) {
-        this.appointmentUid = appointmentUid;
-    }
-
     public PeriodicPatternType getPatternType() {
         return patternType;
-    }
-
-    public void setPatternType(PeriodicPatternType patternType) {
-        this.patternType = patternType;
     }
 
     public String getPattern() {
         return pattern;
     }
 
-    public void setPattern(String pattern) {
-        this.pattern = pattern;
+    public int getTtl() {
+        return ttl;
     }
 
     public String getPayload() {
         return payload;
     }
 
-    public void setPayload(String payload) {
-        this.payload = payload;
-    }
-
     public HashMap<String, Object> getExtraParams() {
         return extraParams;
     }
 
-    public void setExtraParams(HashMap<String, Object> extraParams) {
-        this.extraParams = extraParams;
+    public int getKeyIteration() {
+        return keyIteration;
     }
 
     public boolean isSkipMissed() {
         return skipMissed;
     }
 
-    public void setSkipMissed(boolean skipMissed) {
-        this.skipMissed = skipMissed;
-    }
-
     public long getStartTimestamp() {
         return startTimestamp;
     }
 
-    public void setStartTimestamp(long startTimestamp) {
+    void setAppointmentUid(UUID appointmentUid) {
+        this.appointmentUid = appointmentUid;
+    }
+
+    void setPatternType(PeriodicPatternType patternType) {
+        this.patternType = patternType;
+    }
+
+    void setPattern(String pattern) {
+        this.pattern = pattern;
+    }
+
+    void setTtl(int ttl) {
+        this.ttl = ttl;
+    }
+
+    void setPayload(String payload) {
+        this.payload = payload;
+    }
+
+    void setExtraParams(HashMap<String, Object> extraParams) {
+        this.extraParams = extraParams;
+    }
+
+    void setKeyIteration(int keyIteration) {
+        this.keyIteration = keyIteration;
+    }
+
+    void setSkipMissed(boolean skipMissed) {
+        this.skipMissed = skipMissed;
+    }
+
+    void setStartTimestamp(long startTimestamp) {
         this.startTimestamp = startTimestamp;
     }
 }

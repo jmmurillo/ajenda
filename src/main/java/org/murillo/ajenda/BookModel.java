@@ -24,22 +24,22 @@ class BookModel<T extends Connection> {
 
     private static final String BOOK_INSERT_QUERY =
             "INSERT INTO %s "
-                    + "(uuid, creation_date, due_date, expiry_date, attempts, payload, periodic_uuid, flags%s) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?%s) "
+                    + "(uuid, creation_date, due_date, timeout_date, ttl, attempts, payload, periodic_uuid, flags%s) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?%s) "
                     + "ON CONFLICT (uuid) DO UPDATE SET "
-                    + "(uuid, creation_date, due_date, expiry_date, attempts, payload, periodic_uuid, flags%s) "
-                    + "= (?, ?, ?, ?, ?, ?, ?, ?%s) ";
+                    + "(uuid, creation_date, due_date, timeout_date, ttl, attempts, payload, periodic_uuid, flags%s) "
+                    + "= (?, ?, ?, ?, ?, ?, ?, ?, ?%s) ";
 
     private static final String BOOK_INSERT_DONT_UPDATE_QUERY =
             "INSERT INTO %s "
-                    + "(uuid, creation_date, due_date, expiry_date, attempts, payload, periodic_uuid, flags%s) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?%s) "
+                    + "(uuid, creation_date, due_date, timeout_date, ttl, attempts, payload, periodic_uuid, flags%s) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?%s) "
                     + "ON CONFLICT (uuid) DO NOTHING";
 
     private static final String PERIODIC_BOOK_INSERT_QUERY =
             "INSERT INTO %s "
-                    + "(uuid, creation_date, pattern_type, pattern, payload, skip_missed%s) "
-                    + "VALUES (?, ?, ?, ?, ?, ?%s) "
+                    + "(uuid, creation_date, pattern_type, pattern, ttl, payload, key_iteration, skip_missed%s) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?%s) "
                     + "ON CONFLICT DO NOTHING ";
 
     private static final String PERIODIC_BOOK_SELECT_QUERY =
@@ -62,8 +62,6 @@ class BookModel<T extends Connection> {
             "DELETE "
                     + "FROM %s "
                     + "WHERE uuid IN (%s)";
-
-    private static final int MAX_POLL_PERIODIC_FREQ_RATIO = 128;
 
     static void cancel(
             String tableName,
@@ -180,6 +178,7 @@ class BookModel<T extends Connection> {
                             : nowEpochMs - booking.getDueTimestamp();
                     stmt.setLong(place++, dueTimestamp);
                     stmt.setLong(place++, -1L);
+                    stmt.setInt(place++, booking.getTtl());
                     stmt.setInt(place++, previousAttempts);
                     stmt.setString(place++, booking.getPayload());
                     stmt.setNull(place++, Types.NULL);
@@ -190,6 +189,7 @@ class BookModel<T extends Connection> {
                     stmt.setLong(place++, nowEpochMs);
                     stmt.setLong(place++, dueTimestamp);
                     stmt.setLong(place++, -1L);
+                    stmt.setInt(place++, booking.getTtl());
                     stmt.setInt(place++, previousAttempts);
                     stmt.setString(place++, booking.getPayload());
                     stmt.setNull(place++, Types.NULL);
@@ -217,7 +217,8 @@ class BookModel<T extends Connection> {
             String periodicTableName,
             ConnectionFactory<?> connectionFactory,
             Clock clock,
-            List<PeriodicAppointmentBooking> periodicBookings
+            List<PeriodicAppointmentBooking> periodicBookings,
+            boolean ignoreConflicts
     ) throws Exception {
 
         long nowEpochMs = clock.nowEpochMs();
@@ -259,7 +260,9 @@ class BookModel<T extends Connection> {
                     stmt.setLong(place++, nowEpochMs);
                     stmt.setInt(place++, periodic.getPatternType().getId());
                     stmt.setString(place++, periodic.getPattern());
+                    stmt.setInt(place++, periodic.getTtl());
                     stmt.setString(place++, periodic.getPayload());
+                    stmt.setInt(place++, periodic.getKeyIteration());
                     stmt.setBoolean(place++, periodic.isSkipMissed());
 
                     if (extraColumnsList != null) {
@@ -274,14 +277,15 @@ class BookModel<T extends Connection> {
                     }
                     stmt.execute();
                     if (stmt.getUpdateCount() == 0) {
+                        if (ignoreConflicts) continue;
                         throw new ConflictingPeriodicBookingException(periodic.getAppointmentUid());
                     }
                 }
 
                 //Add first N iterations
                 try (PreparedStatement stmt = conn.prepareStatement(bookSql)) {
-                    List<Long> dueTimestamps = getFirstDueTimestamps(periodic, nowEpochMs, MAX_POLL_PERIODIC_FREQ_RATIO);
-                    insertPeriodicIterations(periodic, dueTimestamps, stmt, extraColumnsList, nowEpochMs);
+                    List<Long> dueTimestamps = getFirstDueTimestamps(periodic, nowEpochMs, periodic.getKeyIteration());
+                    insertPeriodicIterations(periodic, dueTimestamps, stmt, extraColumnsList, nowEpochMs, 0);
                 }
 
             }
@@ -289,7 +293,13 @@ class BookModel<T extends Connection> {
         }
     }
 
-    private static void insertPeriodicIterations(PeriodicAppointmentBooking periodic, List<Long> dueTimestamps, PreparedStatement stmt, ArrayList<Map.Entry<String, ?>> extraColumnsList, long nowEpochMs) throws SQLException {
+    private static void insertPeriodicIterations(
+            PeriodicAppointmentBooking periodic,
+            List<Long> dueTimestamps,
+            PreparedStatement stmt,
+            ArrayList<Map.Entry<String, ?>> extraColumnsList,
+            long nowEpochMs,
+            int previousIteration) throws SQLException {
         long dueTimestamp;
         UUID iterationUid;
         int flags;
@@ -298,8 +308,9 @@ class BookModel<T extends Connection> {
         } else {
             flags = AjendaFlags.withFlags();
         }
-        
-        for (int i = 0; i < dueTimestamps.size() - 1; i++) {
+
+        int i = 0;
+        for (; i < dueTimestamps.size() - 1; i++) {
 
             dueTimestamp = dueTimestamps.get(i);
 
@@ -307,8 +318,15 @@ class BookModel<T extends Connection> {
                     periodic.getAppointmentUid()
                             + "_" + dueTimestamp);
 
-            setQueryParameters(nowEpochMs, periodic, extraColumnsList, stmt, dueTimestamp, iterationUid,
-                    flags);
+            setQueryParameters(
+                    nowEpochMs,
+                    periodic,
+                    extraColumnsList,
+                    stmt,
+                    dueTimestamp,
+                    iterationUid,
+                    flags,
+                    previousIteration + i + 1);
             stmt.addBatch();
         }
 
@@ -320,7 +338,7 @@ class BookModel<T extends Connection> {
                         + "_" + dueTimestamp);
 
         setQueryParameters(nowEpochMs, periodic, extraColumnsList, stmt, dueTimestamp, iterationUid,
-                flags);
+                flags, previousIteration + i + 1);
         stmt.addBatch();
 
         stmt.executeBatch();
@@ -373,11 +391,11 @@ class BookModel<T extends Connection> {
                             periodic,
                             nowEpochMs,
                             appointmentDue.getDueTimestamp(),
-                            MAX_POLL_PERIODIC_FREQ_RATIO,
-                            new ArrayList<>(MAX_POLL_PERIODIC_FREQ_RATIO)
+                            periodic.getKeyIteration(),
+                            new ArrayList<>(periodic.getKeyIteration())
                     );
 
-                    insertPeriodicIterations(periodic, dueTimestamps, stmt, extraColumnsList, nowEpochMs);
+                    insertPeriodicIterations(periodic, dueTimestamps, stmt, extraColumnsList, nowEpochMs, appointmentDue.getAttempts());
                 }
             }
         }
@@ -390,7 +408,8 @@ class BookModel<T extends Connection> {
             PreparedStatement stmt,
             long dueTimestamp,
             UUID iterationUid,
-            int flags) throws SQLException {
+            int flags,
+            int attempts) throws SQLException {
         int place = 1;
 
         //FOR INSERT
@@ -398,7 +417,8 @@ class BookModel<T extends Connection> {
         stmt.setLong(place++, nowEpochMs);
         stmt.setLong(place++, dueTimestamp);
         stmt.setLong(place++, -1L);
-        stmt.setInt(place++, 0);
+        stmt.setInt(place++, periodic.getTtl());
+        stmt.setInt(place++, attempts);
         stmt.setString(place++, periodic.getPayload());
         stmt.setObject(place++, periodic.getAppointmentUid());
         stmt.setInt(place++, flags);

@@ -291,8 +291,9 @@ public class TestAtMostOnce {
 
         long t = System.currentTimeMillis();
         ArrayList<AppointmentDue> read = new ArrayList<>();
-        scheduler.checkAgenda().withFetchSize(10).periodically(100)
+        scheduler.checkAgenda().withFetchSize(10).periodically(200)
                 .readAtMostOnce(false, false, e -> {
+                    System.out.println("It["+e.getAttempts()+"]");
                     read.add(e);
                 });
 
@@ -300,6 +301,7 @@ public class TestAtMostOnce {
                 PeriodicAppointmentBookingBuilder.aPeriodicBooking()
                         .withFixedPeriod(500, PeriodicPatternType.FIXED_RATE)
                         .withPayload(payload)
+                        .withSkipMissed(false)
                         .build());        
         
         Thread.sleep(4750);
@@ -308,9 +310,9 @@ public class TestAtMostOnce {
         Assert.assertEquals(10, read.size());
 
     }
-    
+
     @org.junit.Test
-    public void test_cancel_periodic_appointment() throws Exception {
+    public void test_periodic_appointment_fixed_delay() throws Exception {
         String topic = "prueba";
         String payload = UUID.randomUUID().toString();
 
@@ -324,11 +326,44 @@ public class TestAtMostOnce {
         ArrayList<AppointmentDue> read = new ArrayList<>();
         scheduler.checkAgenda().withFetchSize(10).periodically(100)
                 .readAtMostOnce(false, false, e -> {
-                    System.out.println(e.getDueTimestamp() 
+                    System.out.println("It["+e.getAttempts()+"]");
+                    read.add(e);
+                });
+
+        scheduler.bookPeriodic(
+                PeriodicAppointmentBookingBuilder.aPeriodicBooking()
+                        .withFixedPeriod(500, PeriodicPatternType.FIXED_DELAY)
+                        .withPayload(payload)
+                        .build());
+
+        Thread.sleep(4750);
+        scheduler.shutdown(0);
+
+        Assert.assertEquals(10, read.size());
+
+    }
+
+    @org.junit.Test
+    public void test_cancel_periodic_appointment() throws Exception {
+        String topic = "prueba";
+        String payload = UUID.randomUUID().toString();
+
+        AjendaScheduler scheduler = new AjendaScheduler(
+                dataSource,
+                topic,
+                new Clock() {
+                });
+
+        long t = System.currentTimeMillis();
+        ArrayList<AppointmentDue> read = new ArrayList<>();
+        scheduler.checkAgenda().withFetchSize(10).periodically(1000)
+                .readAtMostOnce(false, false, e -> {
+                    System.out.println("It["+e.getAttempts()+"] " + e.getDueTimestamp()
                             + "( " + (System.currentTimeMillis() - e.getDueTimestamp()) +" ) "
                             + e.getAppointmentUid()
                             +" " + Thread.currentThread().getId()
                     );
+
                     read.add(e);
                 });
 
@@ -338,6 +373,8 @@ public class TestAtMostOnce {
                         .withFixedPeriod(500, PeriodicPatternType.FIXED_RATE)
                         .withPayload(payload)
                         .withUid(periodicUid)
+                        .withKeyIteration(20)
+                        .withSkipMissed(false)
                         .build());
 
         Thread.sleep(2750);

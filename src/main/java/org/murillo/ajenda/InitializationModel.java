@@ -15,7 +15,8 @@ public class InitializationModel {
                     + "uuid             UUID PRIMARY KEY, "
                     + "creation_date    BIGINT, "
                     + "due_date         BIGINT, "
-                    + "expiry_date      BIGINT, "
+                    + "timeout_date     BIGINT, "
+                    + "ttl              BIGINT, "
                     + "attempts         INTEGER, "
                     + "payload          TEXT, "
                     + "periodic_uuid    UUID, "
@@ -28,7 +29,9 @@ public class InitializationModel {
                     + "creation_date    BIGINT, "
                     + "pattern_type     INTEGER, "
                     + "pattern          TEXT, "
+                    + "ttl              BIGINT, "
                     + "payload          TEXT, "
+                    + "key_iteration    INTEGER, "
                     + "skip_missed      BOOLEAN "
                     + ")";    
 
@@ -63,7 +66,8 @@ public class InitializationModel {
                 ensureColumnAndType(columnsForTable, tableName, "uuid", "UUID");
                 ensureColumnAndType(columnsForTable, tableName, "creation_date", "BIGINT");
                 ensureColumnAndType(columnsForTable, tableName, "due_date", "BIGINT");
-                ensureColumnAndType(columnsForTable, tableName, "expiry_date", "BIGINT");
+                ensureColumnAndType(columnsForTable, tableName, "timeout_date", "BIGINT");
+                ensureColumnAndType(columnsForTable, tableName, "ttl", "BIGINT");
                 ensureColumnAndType(columnsForTable, tableName, "attempts", "INTEGER");
                 ensureColumnAndType(columnsForTable, tableName, "payload", "TEXT");
                 ensureColumnAndType(columnsForTable, tableName, "periodic_uuid", "UUID");
@@ -75,9 +79,12 @@ public class InitializationModel {
                 ensureColumnAndType(columnsForTable, periodicTableName, "uuid", "UUID");
                 ensureColumnAndType(columnsForTable, periodicTableName, "creation_date", "BIGINT");
                 ensureColumnAndType(columnsForTable, periodicTableName, "pattern_type", "INTEGER");
-                ensureColumnAndType(columnsForTable, periodicTableName, "pattern", "TEXT");                
-                ensureColumnAndType(columnsForTable, periodicTableName, "payload", "TEXT");                
-                
+                ensureColumnAndType(columnsForTable, periodicTableName, "pattern", "TEXT");
+                ensureColumnAndType(columnsForTable, periodicTableName, "ttl", "BIGINT");
+                ensureColumnAndType(columnsForTable, periodicTableName, "payload", "TEXT");
+                ensureColumnAndType(columnsForTable, periodicTableName, "key_iteration", "INTEGER");
+                ensureColumnAndType(columnsForTable, periodicTableName, "skip_missed", "BOOLEAN");
+
                 stmt.execute(createIndexSql);
                 conn.commit();
             }
