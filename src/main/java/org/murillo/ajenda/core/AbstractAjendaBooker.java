@@ -1,24 +1,23 @@
-package org.murillo.ajenda;
+package org.murillo.ajenda.core;
 
 import org.murillo.ajenda.dto.*;
 
-import java.sql.Connection;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
-import static org.murillo.ajenda.Common.getPeriodicTableNameForTopic;
+import static org.murillo.ajenda.core.Common.getPeriodicTableNameForTopic;
 
-public abstract class AbstractAjendaBooker<T extends Connection> implements AjendaBooker<T> {
+public abstract class AbstractAjendaBooker implements AjendaBooker {
 
-    protected final ConnectionFactory<T> dataSource;
+    protected final ConnectionFactory dataSource;
     protected final String topic;
     protected final String schemaName;
     protected final String tableName;
     protected final String periodicTableName;
     protected final Clock clock;
 
-    protected AbstractAjendaBooker(ConnectionFactory<T> dataSource, String topic, String schemaName, Clock clock) {
+    protected AbstractAjendaBooker(ConnectionFactory dataSource, String topic, String schemaName, Clock clock) {
         if (dataSource == null) throw new IllegalArgumentException("dataSource must not be null");
         if (clock == null) throw new IllegalArgumentException("clock must not be null");
         if (topic == null || topic.isEmpty()) throw new IllegalArgumentException("topic must not be empty");
@@ -33,7 +32,7 @@ public abstract class AbstractAjendaBooker<T extends Connection> implements Ajen
         this.clock = clock;
     }
 
-    protected AbstractAjendaBooker(AjendaScheduler<T> ajendaScheduler) {
+    protected AbstractAjendaBooker(AjendaScheduler ajendaScheduler) {
         this.dataSource = ajendaScheduler;
         this.clock = ajendaScheduler.getClock();
         this.topic = ajendaScheduler.getTopic();
@@ -43,7 +42,7 @@ public abstract class AbstractAjendaBooker<T extends Connection> implements Ajen
     }
 
     @Override
-    public abstract T getConnection() throws Exception;
+    public abstract ConnectionWrapper getConnection() throws Exception;
 
     @Override
     public String getTopic() {

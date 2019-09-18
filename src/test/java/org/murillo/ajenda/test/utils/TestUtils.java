@@ -1,8 +1,8 @@
 package org.murillo.ajenda.test.utils;
 
-import org.murillo.ajenda.dto.ConnectionFactory;
+import org.murillo.ajenda.core.ConnectionFactory;
+import org.murillo.ajenda.core.ConnectionWrapper;
 
-import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
@@ -18,12 +18,14 @@ public class TestUtils {
                         "WHERE  table_schema = 'public' " +
                         "AND    table_name = ?); ";
 
-        try (Connection connection = ds.getConnection()) {
-            try (PreparedStatement statement = connection.prepareStatement(query)) {
-                statement.setString(1, tableName);
-                ResultSet resultSet = statement.executeQuery();
-                return resultSet.next() && resultSet.getBoolean(1);
-            }
+        try (ConnectionWrapper connw = ds.getConnection()) {
+            return connw.doWork(connection -> {
+                try (PreparedStatement statement = connection.prepareStatement(query)) {
+                    statement.setString(1, tableName);
+                    ResultSet resultSet = statement.executeQuery();
+                    return resultSet.next() && resultSet.getBoolean(1);
+                }
+            });
         }
     }
 
@@ -37,16 +39,18 @@ public class TestUtils {
 
         ArrayList<String> columns = new ArrayList<>();
 
-        try (Connection connection = ds.getConnection()) {
-            try (PreparedStatement statement = connection.prepareStatement(query)) {
-                statement.setString(1, tableName);
-                ResultSet resultSet = statement.executeQuery();
-                while (resultSet.next()) {
-                    columns.add(resultSet.getString(1));
+        try (ConnectionWrapper connw = ds.getConnection()) {
+            return connw.doWork(connection -> {
+                try (PreparedStatement statement = connection.prepareStatement(query)) {
+                    statement.setString(1, tableName);
+                    ResultSet resultSet = statement.executeQuery();
+                    while (resultSet.next()) {
+                        columns.add(resultSet.getString(1));
+                    }
                 }
-            }
+                return columns;
+            });
         }
-        return columns;
     }
 
 }

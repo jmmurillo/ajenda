@@ -2,13 +2,14 @@ package org.murillo.ajenda.test.utils;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import org.murillo.ajenda.dto.ConnectionFactory;
+import org.murillo.ajenda.core.ConnectionFactory;
+import org.murillo.ajenda.core.JdbcConnectionFactory;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
 
-public class TestDataSource implements ConnectionFactory {
+public class TestDataSource implements JdbcConnectionFactory {
     
     private HikariConfig config;
     private HikariDataSource ds;
@@ -17,7 +18,7 @@ public class TestDataSource implements ConnectionFactory {
 
         config = new HikariConfig();
         config.setDataSource(postgresDatabase);
-        //config.setJdbcUrl("jdbc:postgresql://localhost:5432/postgres");
+        //config.setJdbcUrl("core:postgresql://localhost:5432/postgres");
 //        config.setUsername("postgres");
 //        config.setPassword("mysecretpassword");
 //        config.addDataSourceProperty("cachePrepStmts", "true");

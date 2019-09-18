@@ -5,7 +5,9 @@ import io.zonky.test.db.postgres.junit.SingleInstancePostgresRule;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.ClassRule;
-import org.murillo.ajenda.AjendaScheduler;
+import org.murillo.ajenda.core.AjendaBooker;
+import org.murillo.ajenda.core.AjendaScheduler;
+import org.murillo.ajenda.core.ConnectionFactoryFactory;
 import org.murillo.ajenda.dto.*;
 import org.murillo.ajenda.test.utils.TestDataSource;
 
@@ -25,7 +27,7 @@ public class TestAtMostOnce {
     public static SingleInstancePostgresRule pg = EmbeddedPostgresRules.singleInstance();
 
     public TestDataSource dataSource;
-    
+
     @Before
     public void clearDB() throws SQLException {
         dataSource = new TestDataSource(pg.getEmbeddedPostgres().getPostgresDatabase());
@@ -49,13 +51,13 @@ public class TestAtMostOnce {
     public void test_simple_book_and_handle() throws Exception {
         String topic = "prueba";
         String payload = UUID.randomUUID().toString();
-        
+
         AjendaScheduler scheduler = new AjendaScheduler(
-                dataSource,
+                ConnectionFactoryFactory.from(dataSource),
                 topic,
                 new Clock() {
                 });
-        
+
         simpleBookAppointment(scheduler, payload);
 
         ArrayList<AppointmentDue> read = new ArrayList<>();
@@ -86,7 +88,7 @@ public class TestAtMostOnce {
         };
 
         AjendaScheduler scheduler = new AjendaScheduler(
-                dataSource,
+                ConnectionFactoryFactory.from(dataSource),
                 topic,
                 clock);
 
@@ -130,7 +132,7 @@ public class TestAtMostOnce {
         };
 
         AjendaScheduler scheduler = new AjendaScheduler(
-                dataSource,
+                ConnectionFactoryFactory.from(dataSource),
                 topic,
                 clock);
 
@@ -166,18 +168,18 @@ public class TestAtMostOnce {
         Assert.assertEquals(1, read.size());
         Assert.assertEquals(uuid2, read.get(0).getAppointmentUid());
     }
-    
+
     @org.junit.Test
     public void test_simple_book_and_handle_rebook() throws Exception {
         String topic = "prueba";
         String payload = UUID.randomUUID().toString();
-        
+
         AjendaScheduler scheduler = new AjendaScheduler(
-                dataSource,
+                ConnectionFactoryFactory.from(dataSource),
                 topic,
                 new Clock() {
                 });
-        
+
         simpleBookAppointment(scheduler, payload);
 
         ArrayList<AppointmentDue> read = new ArrayList<>();
@@ -209,15 +211,15 @@ public class TestAtMostOnce {
     public void test_multiple_book_and_handle() throws Exception {
         String topic = "prueba";
         List<String> payloads = IntStream.range(0, 19).mapToObj(i -> String.valueOf(i)).collect(Collectors.toList());
-        
+
         AjendaScheduler scheduler = new AjendaScheduler(
-                dataSource,
+                ConnectionFactoryFactory.from(dataSource),
                 topic,
                 1,
                 10,
                 new Clock() {
                 });
-        
+
         simpleBookAppointment(scheduler, payloads);
 
         ArrayList<AppointmentDue> read = new ArrayList<>();
@@ -249,7 +251,7 @@ public class TestAtMostOnce {
         };
 
         AjendaScheduler scheduler = new AjendaScheduler(
-                dataSource,
+                ConnectionFactoryFactory.from(dataSource),
                 topic,
                 clock);
 
@@ -282,33 +284,35 @@ public class TestAtMostOnce {
     public void test_periodic_appointment() throws Exception {
         String topic = "prueba";
         String payload = UUID.randomUUID().toString();
-        
+
         AjendaScheduler scheduler = new AjendaScheduler(
-                dataSource,
+                ConnectionFactoryFactory.from(dataSource),
                 topic,
                 new Clock() {
                 });
+        try {
+            long t = System.currentTimeMillis();
+            ArrayList<AppointmentDue> read = new ArrayList<>();
+            scheduler.checkAgenda().withFetchSize(10).periodically(200)
+                    .readAtMostOnce(false, false, e -> {
+                        System.out.println("It[" + e.getAttempts() + "]");
+                        read.add(e);
+                    });
 
-        long t = System.currentTimeMillis();
-        ArrayList<AppointmentDue> read = new ArrayList<>();
-        scheduler.checkAgenda().withFetchSize(10).periodically(200)
-                .readAtMostOnce(false, false, e -> {
-                    System.out.println("It["+e.getAttempts()+"]");
-                    read.add(e);
-                });
+            scheduler.bookPeriodic(
+                    PeriodicAppointmentBookingBuilder.aPeriodicBooking()
+                            .withFixedPeriod(500, PeriodicPatternType.FIXED_RATE)
+                            .withPayload(payload)
+                            .withSkipMissed(false)
+                            .build());
 
-        scheduler.bookPeriodic(
-                PeriodicAppointmentBookingBuilder.aPeriodicBooking()
-                        .withFixedPeriod(500, PeriodicPatternType.FIXED_RATE)
-                        .withPayload(payload)
-                        .withSkipMissed(false)
-                        .build());        
-        
-        Thread.sleep(4750);
-        scheduler.shutdown(0);
-        
-        Assert.assertEquals(10, read.size());
+            Thread.sleep(4750);
+            scheduler.shutdown(0);
 
+            Assert.assertEquals(10, read.size());
+        } finally {
+            scheduler.shutdown(0);
+        }
     }
 
     @org.junit.Test
@@ -317,30 +321,36 @@ public class TestAtMostOnce {
         String payload = UUID.randomUUID().toString();
 
         AjendaScheduler scheduler = new AjendaScheduler(
-                dataSource,
+                ConnectionFactoryFactory.from(dataSource),
                 topic,
                 new Clock() {
                 });
+        try {
+            long t = System.currentTimeMillis();
+            ArrayList<AppointmentDue> read = new ArrayList<>();
+            scheduler.checkAgenda().withFetchSize(1).periodically(100)
+                    .readAtMostOnce(false, false, e -> {
+                        System.out.println("It[" + e.getAttempts() + "] " + e.getDueTimestamp()
+                                        + "( " + (System.currentTimeMillis() - e.getDueTimestamp()) + " ) "
+                                        + e.getAppointmentUid()
+                                        + " " + Thread.currentThread().getId());
+                        read.add(e);
+                    });
 
-        long t = System.currentTimeMillis();
-        ArrayList<AppointmentDue> read = new ArrayList<>();
-        scheduler.checkAgenda().withFetchSize(10).periodically(100)
-                .readAtMostOnce(false, false, e -> {
-                    System.out.println("It["+e.getAttempts()+"]");
-                    read.add(e);
-                });
+            scheduler.bookPeriodic(
+                    PeriodicAppointmentBookingBuilder.aPeriodicBooking()
+                            .withFixedPeriod(500, PeriodicPatternType.FIXED_DELAY)
+                            .withSkipMissed(false)
+                            .withPayload(payload)
+                            .build());
 
-        scheduler.bookPeriodic(
-                PeriodicAppointmentBookingBuilder.aPeriodicBooking()
-                        .withFixedPeriod(500, PeriodicPatternType.FIXED_DELAY)
-                        .withPayload(payload)
-                        .build());
+            Thread.sleep(4750);
+            scheduler.shutdown(0);
 
-        Thread.sleep(4750);
-        scheduler.shutdown(0);
-
-        Assert.assertEquals(10, read.size());
-
+            Assert.assertEquals(10, read.size());
+        } finally {
+            scheduler.shutdown(0);
+        }
     }
 
     @org.junit.Test
@@ -349,48 +359,50 @@ public class TestAtMostOnce {
         String payload = UUID.randomUUID().toString();
 
         AjendaScheduler scheduler = new AjendaScheduler(
-                dataSource,
+                ConnectionFactoryFactory.from(dataSource),
                 topic,
                 new Clock() {
                 });
+        try {
+            long t = System.currentTimeMillis();
+            ArrayList<AppointmentDue> read = new ArrayList<>();
+            scheduler.checkAgenda().withFetchSize(10).periodically(1000)
+                    .readAtMostOnce(false, false, e -> {
+                        System.out.println("It[" + e.getAttempts() + "] " + e.getDueTimestamp()
+                                + "( " + (System.currentTimeMillis() - e.getDueTimestamp()) + " ) "
+                                + e.getAppointmentUid()
+                                + " " + Thread.currentThread().getId()
+                        );
 
-        long t = System.currentTimeMillis();
-        ArrayList<AppointmentDue> read = new ArrayList<>();
-        scheduler.checkAgenda().withFetchSize(10).periodically(1000)
-                .readAtMostOnce(false, false, e -> {
-                    System.out.println("It["+e.getAttempts()+"] " + e.getDueTimestamp()
-                            + "( " + (System.currentTimeMillis() - e.getDueTimestamp()) +" ) "
-                            + e.getAppointmentUid()
-                            +" " + Thread.currentThread().getId()
-                    );
+                        read.add(e);
+                    });
 
-                    read.add(e);
-                });
+            UUID periodicUid = UUID.randomUUID();
+            scheduler.bookPeriodic(
+                    PeriodicAppointmentBookingBuilder.aPeriodicBooking()
+                            .withFixedPeriod(500, PeriodicPatternType.FIXED_RATE)
+                            .withPayload(payload)
+                            .withUid(periodicUid)
+                            .withKeyIteration(20)
+                            .withSkipMissed(false)
+                            .build());
 
-        UUID periodicUid = UUID.randomUUID();
-        scheduler.bookPeriodic(
-                PeriodicAppointmentBookingBuilder.aPeriodicBooking()
-                        .withFixedPeriod(500, PeriodicPatternType.FIXED_RATE)
-                        .withPayload(payload)
-                        .withUid(periodicUid)
-                        .withKeyIteration(20)
-                        .withSkipMissed(false)
-                        .build());
+            Thread.sleep(2750);
+            Assert.assertEquals(6, read.size());
 
-        Thread.sleep(2750);
-        Assert.assertEquals(6, read.size());
-        
-        scheduler.cancelPeriodic(periodicUid);
-        //Already scheduled iterations leaks through
-        //Timing is tricky, improve test
-        Thread.sleep(2000);
-        Assert.assertEquals(6, read.size());
+            scheduler.cancelPeriodic(periodicUid);
+            //Already scheduled iterations leaks through
+            //Timing is tricky, improve test
+            Thread.sleep(2000);
+            Assert.assertEquals(6, read.size());
 
-        scheduler.shutdown(0);
-        Assert.assertEquals(6, read.size());
+            scheduler.shutdown(0);
+            Assert.assertEquals(6, read.size());
+        } finally {
+            scheduler.shutdown(0);
+        }
+    }
 
-    }    
-    
     private void simpleBookAppointment(AjendaBooker booker, String payload) throws Exception {
         booker.book(
                 AppointmentBookingBuilder.aBooking()

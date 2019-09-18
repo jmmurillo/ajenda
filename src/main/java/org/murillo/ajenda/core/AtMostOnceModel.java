@@ -1,11 +1,10 @@
-package org.murillo.ajenda;
+package org.murillo.ajenda.core;
 
 import org.murillo.ajenda.dto.AppointmentBookingBuilder;
 import org.murillo.ajenda.dto.AppointmentDue;
 import org.murillo.ajenda.dto.SimpleAppointmentListener;
 import org.murillo.ajenda.dto.UnhandledAppointmentException;
 
-import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
@@ -16,7 +15,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.murillo.ajenda.Common.extractAppointmentDue;
+import static org.murillo.ajenda.core.Common.extractAppointmentDue;
 
 class AtMostOnceModel {
 
@@ -178,27 +177,33 @@ class AtMostOnceModel {
 
         List<AppointmentDue> appointments = new ArrayList<>(limitSize);
 
-        try (Connection conn = ajendaScheduler.getConnection()) {
-            if (conn.getAutoCommit()) throw new IllegalStateException("Connection must have auto-commit disabled");
-            //:limitDueDate, :now, :size
-            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                stmt.setLong(1, limitDueDate);
-                stmt.setLong(2, nowEpoch);
-                stmt.setInt(3, limitSize);
-                ResultSet resultSet = stmt.executeQuery();
-                while (resultSet.next()) {
-                    AppointmentDue appointmentDue = extractAppointmentDue(resultSet, nowEpoch);
-                    BookModel.bookNextIterations(
-                            appointmentDue,
-                            ajendaScheduler.getTableNameWithSchema(),
-                            ajendaScheduler.getPeriodicTableNameWithSchema(),
-                            conn,
-                            nowEpoch);
-                    appointments.add(appointmentDue);
+
+        try (ConnectionWrapper connw = ajendaScheduler.getConnection()) {
+            connw.doWork(connection -> {
+                if (connection.getAutoCommit())
+                    throw new IllegalStateException("Connection must have auto-commit disabled");
+                //:limitDueDate, :now, :size
+                try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+                    stmt.setLong(1, limitDueDate);
+                    stmt.setLong(2, nowEpoch);
+                    stmt.setInt(3, limitSize);
+                    ResultSet resultSet = stmt.executeQuery();
+                    while (resultSet.next()) {
+                        AppointmentDue appointmentDue = extractAppointmentDue(resultSet, nowEpoch);
+                        BookModel.bookNextIterations(
+                                appointmentDue,
+                                ajendaScheduler.getTableNameWithSchema(),
+                                ajendaScheduler.getPeriodicTableNameWithSchema(),
+                                connection,
+                                nowEpoch);
+                        appointments.add(appointmentDue);
+                    }
+
                 }
-                conn.commit();
+                connw.commit();
                 ajendaScheduler.addRead(appointments.size());
-            }
+                return null;
+            });
         }
         return appointments;
     }

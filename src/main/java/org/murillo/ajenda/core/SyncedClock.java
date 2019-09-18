@@ -1,10 +1,7 @@
-package org.murillo.ajenda.utils;
+package org.murillo.ajenda.core;
 
-import org.murillo.ajenda.Common;
 import org.murillo.ajenda.dto.Clock;
-import org.murillo.ajenda.dto.ConnectionFactory;
 
-import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
@@ -47,33 +44,13 @@ public class SyncedClock implements Clock {
     private void sync() {
         try {
             ArrayList<long[]> offsets = new ArrayList<>(SYNC_ITERATIONS);
-            try (Connection conn = connectionFactory.getConnection()) {
-                try (PreparedStatement preparedStatement = conn.prepareStatement(GET_TIME_QUERY)) {
-                    long javaEpoch = System.currentTimeMillis();
-                    long delay = System.nanoTime();
-                    ResultSet resultSet = preparedStatement.executeQuery();
-                    delay = (System.nanoTime() - delay) / 2000000L;
-                    resultSet.next();
-                    long dbEpoch = resultSet.getLong(1) - delay;
-                    offsets.add(new long[]{dbEpoch - javaEpoch, delay});
-                }
+            try (ConnectionWrapper conn = connectionFactory.getConnection()) {
+                if (requestTime(offsets, conn)) return;//Interrupted
             }
             for (int i = 1; i < SYNC_ITERATIONS; i++) {
                 Thread.sleep(1000);
-                try (Connection conn = connectionFactory.getConnection()) {
-                    try (PreparedStatement preparedStatement = conn.prepareStatement(GET_TIME_QUERY)) {
-                        long javaEpoch = System.currentTimeMillis();
-                        long delay = System.nanoTime();
-                        if(Thread.currentThread().isInterrupted()) {
-                            return;//Interrupted
-                        }else{
-                            ResultSet resultSet = preparedStatement.executeQuery();
-                            delay = (System.nanoTime() - delay) / 2000000L;
-                            resultSet.next();
-                            long dbEpoch = resultSet.getLong(1) - delay;
-                            offsets.add(new long[]{dbEpoch - javaEpoch, delay});
-                        }
-                    }
+                try (ConnectionWrapper conn = connectionFactory.getConnection()) {
+                    if (requestTime(offsets, conn)) return;//Interrupted
                 }
             }
             this.offset = (long) offsets.stream()
@@ -84,7 +61,25 @@ public class SyncedClock implements Clock {
         }catch (Exception ex){
             //TODO
         }
-        System.out.println("OFFSET = " + offset);
+    }
+
+    public static boolean requestTime(ArrayList<long[]> offsets, ConnectionWrapper connection) throws Exception {
+        return connection.doWork(conn -> {
+            try (PreparedStatement preparedStatement = conn.prepareStatement(GET_TIME_QUERY)) {
+                if (Thread.currentThread().isInterrupted()) {
+                    return true;
+                } else {
+                    long javaEpoch = System.currentTimeMillis();
+                    long delay = System.nanoTime();
+                    ResultSet resultSet = preparedStatement.executeQuery();
+                    delay = (System.nanoTime() - delay) / 2000000L;
+                    resultSet.next();
+                    long dbEpoch = resultSet.getLong(1) - delay;
+                    offsets.add(new long[]{dbEpoch - javaEpoch, delay});
+                }
+            }
+            return false;
+        });
     }
 
     public long nowEpochMs(){

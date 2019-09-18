@@ -15,6 +15,9 @@ dependencies {
     
     compile 'com.cronutils:cron-utils:9.0.1'
     
+    // https://mvnrepository.com/artifact/org.hibernate/hibernate-core
+    compile group: 'org.hibernate', name: 'hibernate-core', version: '5.4.4.Final'
+
     // https://mvnrepository.com/artifact/org.postgresql/postgresql
     testCompile group: 'org.postgresql', name: 'postgresql', version: '42.2.6'
     // https://mvnrepository.com/artifact/com.zaxxer/HikariCP

@@ -1,13 +1,11 @@
-package org.murillo.ajenda;
+package org.murillo.ajenda.core;
 
 import org.murillo.ajenda.dto.*;
-import org.murillo.ajenda.utils.SyncedClock;
 
-import java.sql.Connection;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class AjendaScheduler<T extends Connection> extends AbstractAjendaBooker<T> {
+public class AjendaScheduler extends AbstractAjendaBooker {
 
     public static final String DEFAULT_SCHEMA_NAME = "public";
     
@@ -24,17 +22,17 @@ public class AjendaScheduler<T extends Connection> extends AbstractAjendaBooker<
     private double meanLag = 0.0;
     
 
-    public AjendaScheduler(ConnectionFactory<T> dataSource, String topic, String customSchema) throws Exception {
+    public AjendaScheduler(ConnectionFactory dataSource, String topic, String customSchema) throws Exception {
         this(dataSource, topic, new SyncedClock(dataSource), customSchema);
         this.ownClock = true;
     }
 
-    public AjendaScheduler(ConnectionFactory<T> dataSource, String topic) throws Exception {
+    public AjendaScheduler(ConnectionFactory dataSource, String topic) throws Exception {
         this(dataSource, topic, new SyncedClock(dataSource), DEFAULT_SCHEMA_NAME);
         this.ownClock = true;
     }
 
-    public AjendaScheduler(ConnectionFactory<T> dataSource, String topic, Clock clock, String customSchema) throws Exception {
+    public AjendaScheduler(ConnectionFactory dataSource, String topic, Clock clock, String customSchema) throws Exception {
         this(
                 dataSource,
                 topic,
@@ -44,7 +42,7 @@ public class AjendaScheduler<T extends Connection> extends AbstractAjendaBooker<
                 customSchema);
     }
 
-    public AjendaScheduler(ConnectionFactory<T> dataSource, String topic, Clock clock) throws Exception {
+    public AjendaScheduler(ConnectionFactory dataSource, String topic, Clock clock) throws Exception {
         this(
                 dataSource,
                 topic,
@@ -54,13 +52,13 @@ public class AjendaScheduler<T extends Connection> extends AbstractAjendaBooker<
                 DEFAULT_SCHEMA_NAME);
     }
 
-    public AjendaScheduler(ConnectionFactory<T> dataSource, String topic, int concurrencyLevel, int maxQueueSize) throws Exception {
+    public AjendaScheduler(ConnectionFactory dataSource, String topic, int concurrencyLevel, int maxQueueSize) throws Exception {
         this(dataSource, topic, concurrencyLevel, maxQueueSize, new SyncedClock(dataSource), DEFAULT_SCHEMA_NAME);
         this.ownClock = true;
     }
 
     public AjendaScheduler(
-            ConnectionFactory<T> dataSource,
+            ConnectionFactory dataSource,
             String topic,
             int concurrencyLevel,
             int maxQueueSize,
@@ -70,7 +68,7 @@ public class AjendaScheduler<T extends Connection> extends AbstractAjendaBooker<
     }
 
     public AjendaScheduler(
-            ConnectionFactory<T> dataSource,
+            ConnectionFactory dataSource,
             String topic,
             int concurrencyLevel,
             int maxQueueSize,
@@ -125,9 +123,8 @@ public class AjendaScheduler<T extends Connection> extends AbstractAjendaBooker<
         return maxQueueSize;
     }
 
-    public T getConnection() throws Exception {
-        T connection = this.dataSource.getConnection();
-        if (connection.getAutoCommit()) throw new IllegalStateException("Connection must have auto-commit disabled");
+    public ConnectionWrapper getConnection() throws Exception {
+        ConnectionWrapper connection = this.dataSource.getConnection();
         return connection;
     }
 

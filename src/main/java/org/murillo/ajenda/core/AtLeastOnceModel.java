@@ -1,20 +1,19 @@
-package org.murillo.ajenda;
+package org.murillo.ajenda.core;
 
-import org.murillo.ajenda.dto.AppointmentDue;
-import org.murillo.ajenda.dto.CancellableAppointmentListener;
-import org.murillo.ajenda.dto.TransactionalAppointmentListener;
-import org.murillo.ajenda.dto.UnhandledAppointmentException;
+import org.murillo.ajenda.dto.*;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.murillo.ajenda.Common.extractAppointmentDue;
+import static org.murillo.ajenda.core.Common.extractAppointmentDue;
 
 class AtLeastOnceModel {
 
@@ -117,7 +116,7 @@ class AtLeastOnceModel {
                 final ScheduledFuture<?> future = ajendaScheduler.getExecutor().schedule(() -> {
                             try {
                                 try {
-                                    if (isNotExpired(ajendaScheduler, a)
+                                    if (isNotExpired(ajendaScheduler.getClock(), a)
                                             && isNotMissed(a, delay)) {
                                         ajendaScheduler.addBeganToProcess(a.getDueTimestamp());
                                         listener.receive(a, cancelFlag);
@@ -215,22 +214,41 @@ class AtLeastOnceModel {
         } finally {
             if (blocking) semaphore.acquire(scheduled);
         }
-    }
-
+    }    
+    
     private static void ackIndividually(AjendaScheduler ajendaScheduler, String tableName, AppointmentDue appointmentDue, long lookAhead, CancelFlag cancelFlag) throws Exception {
-        try (Connection conn = ajendaScheduler.getConnection()) {
-            String sql = String.format(ACK_ONE_QUERY, tableName);
-            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                stmt.setObject(1, appointmentDue.getAppointmentUid());
-                stmt.execute();
-                BookModel.bookNextIterations(
+        try (ConnectionWrapper conn = ajendaScheduler.getConnection()) {
+            conn.doWork(connection -> {
+                performAckIndividually(
+                        tableName,
                         appointmentDue,
+                        connection,
                         ajendaScheduler.getTableNameWithSchema(),
                         ajendaScheduler.getPeriodicTableNameWithSchema(),
-                        conn,
-                        ajendaScheduler.getClock().nowEpochMs());
-                if (!cancelFlag.isCancelled()) conn.commit();
-            }
+                        ajendaScheduler.getClock());
+                return null;
+            });
+            if (!cancelFlag.isCancelled()) conn.commit();
+        }
+    }
+
+    private static void performAckIndividually(
+            String tableName,
+            AppointmentDue appointmentDue,
+            Connection conn,
+            String tableNameWithSchema,
+            String periodicTableNameWithSchema,
+            Clock clock) throws SQLException {
+        String sql = String.format(ACK_ONE_QUERY, tableName);
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setObject(1, appointmentDue.getAppointmentUid());
+            stmt.execute();
+            BookModel.bookNextIterations(
+                    appointmentDue,
+                    tableNameWithSchema,
+                    periodicTableNameWithSchema,
+                    conn,
+                    clock.nowEpochMs());
         }
     }
 
@@ -240,44 +258,52 @@ class AtLeastOnceModel {
             TransactionalAppointmentListener listener,
             AppointmentDue appointmentDue,
             long lookAhead,
-            CancelFlag cancelFlag, long delay) throws Exception {
-        try (Connection conn = ajendaScheduler.getConnection()) {
-            String sql = String.format(ACK_ONE_QUERY, tableName);
-            final long nowEpoch = ajendaScheduler.getClock().nowEpochMs();
-            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                stmt.setObject(1, appointmentDue.getAppointmentUid());
-                stmt.execute();
-                BookModel.bookNextIterations(
-                        appointmentDue,
-                        ajendaScheduler.getTableNameWithSchema(),
-                        ajendaScheduler.getPeriodicTableNameWithSchema(),
-                        conn,
-                        nowEpoch);
-            }
-            try {
-                if (isNotExpired(ajendaScheduler, appointmentDue)
-                        && isNotMissed(appointmentDue, delay)) {
-                    ajendaScheduler.addBeganToProcess(appointmentDue.getDueTimestamp());
-                    listener.receive(appointmentDue, cancelFlag, new AbstractAjendaBooker(ajendaScheduler) {
-                        @Override
-                        public Connection getConnection() {
-                            return conn;
-                        }
-                    });
-                    if (!cancelFlag.isCancelled()) {
-                        conn.commit();
-                        ajendaScheduler.addProcessed(1);
+            CancelFlag cancelFlag,
+            long delay) throws Exception {
+        AtomicBoolean toCommit = new AtomicBoolean(false);
+        try (ConnectionWrapper connw = ajendaScheduler.getConnection()) {
+            connw.doWork(connection -> {
+                performExecuteAndAck(ajendaScheduler, tableName, listener, appointmentDue, cancelFlag, delay, connw, connection);
+                return null;
+            });
+            if (toCommit.get()) connw.commit();
+        }
+    }
+
+    private static void performExecuteAndAck(AjendaScheduler ajendaScheduler, String tableName, TransactionalAppointmentListener listener, AppointmentDue appointmentDue, CancelFlag cancelFlag, long delay, ConnectionWrapper connw, Connection connection) throws SQLException {
+        String sql = String.format(ACK_ONE_QUERY, tableName);
+        final long nowEpoch = ajendaScheduler.getClock().nowEpochMs();
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setObject(1, appointmentDue.getAppointmentUid());
+            stmt.execute();
+            BookModel.bookNextIterations(
+                    appointmentDue,
+                    ajendaScheduler.getTableNameWithSchema(),
+                    ajendaScheduler.getPeriodicTableNameWithSchema(),
+                    connection,
+                    nowEpoch);
+        }
+        try {
+            if (isNotExpired(ajendaScheduler.getClock(), appointmentDue)
+                    && isNotMissed(appointmentDue, delay)) {
+                ajendaScheduler.addBeganToProcess(appointmentDue.getDueTimestamp());
+                listener.receive(appointmentDue, cancelFlag, new AbstractAjendaBooker(ajendaScheduler) {
+                    @Override
+                    public ConnectionWrapper getConnection() {
+                        return connw;
                     }
+                });
+                if (!cancelFlag.isCancelled()) {
+
+                    ajendaScheduler.addProcessed(1);
                 }
-            } catch (UnhandledAppointmentException th) {
-                //Controlled error
-                return;
-            } catch (Throwable th) {
-                //TODO log
-                //TODO free or ignore until expiration
-                th.printStackTrace();
-                return;
             }
+        } catch (UnhandledAppointmentException th) {
+            //Controlled error
+        } catch (Throwable th) {
+            //TODO log
+            //TODO free or ignore until expiration
+            th.printStackTrace();
         }
     }
 
@@ -290,6 +316,20 @@ class AtLeastOnceModel {
             String customSqlCondition) throws Exception {
 
         String tableName = ajendaScheduler.getTableNameWithSchema();
+        List<AppointmentDue> appointments = new ArrayList<>(limitSize);
+
+        try (ConnectionWrapper conn = ajendaScheduler.getConnection()) {
+            conn.doWork(conection -> {
+                performSelectAndUpdate(pollPeriod, limitSize, nowEpoch, timeout, customSqlCondition, tableName, appointments, conection);
+                return null;
+            });
+            conn.commit();
+            ajendaScheduler.addRead(appointments.size());
+        }
+        return appointments;
+    }
+
+    private static void performSelectAndUpdate(long pollPeriod, int limitSize, long nowEpoch, long timeout, String customSqlCondition, String tableName, List<AppointmentDue> appointments, Connection conn) throws SQLException {
         long limitDueDate = nowEpoch + pollPeriod;
 
         String sql = String.format(
@@ -299,26 +339,21 @@ class AtLeastOnceModel {
                 customSqlCondition == null || customSqlCondition.isEmpty() ? "TRUE"
                         : customSqlCondition);
 
-        List<AppointmentDue> appointments = new ArrayList<>(limitSize);
 
-        try (Connection conn = ajendaScheduler.getConnection()) {
-            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                stmt.setLong(1, nowEpoch);
-                stmt.setLong(2, timeout);
-                stmt.setLong(3, limitDueDate);
-                stmt.setLong(4, nowEpoch);
-                stmt.setInt(5, limitSize);
-                ResultSet resultSet = stmt.executeQuery();
-                while (resultSet.next()) {
-                    AppointmentDue appointmentDue = extractAppointmentDue(resultSet, nowEpoch);
-                    appointmentDue.setAttempts(appointmentDue.getAttempts() - 1);
-                    appointments.add(appointmentDue);
-                }
-                conn.commit();
-                ajendaScheduler.addRead(appointments.size());
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setLong(1, nowEpoch);
+            stmt.setLong(2, timeout);
+            stmt.setLong(3, limitDueDate);
+            stmt.setLong(4, nowEpoch);
+            stmt.setInt(5, limitSize);
+            ResultSet resultSet = stmt.executeQuery();
+            while (resultSet.next()) {
+                AppointmentDue appointmentDue = extractAppointmentDue(resultSet, nowEpoch);
+                appointmentDue.setAttempts(appointmentDue.getAttempts() - 1);
+                appointments.add(appointmentDue);
             }
+
         }
-        return appointments;
     }
 
     private static boolean isNotMissed(AppointmentDue appointmentDue, long delay) {
@@ -326,9 +361,9 @@ class AtLeastOnceModel {
                 || !AjendaFlags.isSkipMissed(appointmentDue.getFlags());
     }
 
-    private static boolean isNotExpired(AjendaScheduler ajendaScheduler, AppointmentDue appointmentDue) {
+    private static boolean isNotExpired(Clock clock, AppointmentDue appointmentDue) {
         return appointmentDue.getTtl() <= 0
-                || (ajendaScheduler.getClock().nowEpochMs() - appointmentDue.getTtl()) <
+                || (clock.nowEpochMs() - appointmentDue.getTtl()) <
                 appointmentDue.getDueTimestamp();
     }
 

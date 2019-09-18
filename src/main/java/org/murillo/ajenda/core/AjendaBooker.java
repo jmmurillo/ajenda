@@ -1,11 +1,13 @@
-package org.murillo.ajenda.dto;
+package org.murillo.ajenda.core;
 
-import java.sql.Connection;
+import org.murillo.ajenda.dto.AppointmentBooking;
+import org.murillo.ajenda.dto.Clock;
+import org.murillo.ajenda.dto.PeriodicAppointmentBooking;
+
 import java.util.List;
 import java.util.UUID;
 
-public interface AjendaBooker<T extends Connection> extends ConnectionFactory<T> {
-    T getConnection() throws Exception;
+public interface AjendaBooker extends ConnectionFactory {
 
     String getTopic();
 

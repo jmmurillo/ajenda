@@ -1,4 +1,4 @@
-package org.murillo.ajenda;
+package org.murillo.ajenda.core;
 
 import org.murillo.ajenda.dto.AppointmentDue;
 import org.murillo.ajenda.dto.PeriodicAppointmentBooking;
