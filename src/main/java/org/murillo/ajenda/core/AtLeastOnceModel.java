@@ -260,17 +260,16 @@ class AtLeastOnceModel {
             long lookAhead,
             CancelFlag cancelFlag,
             long delay) throws Exception {
-        AtomicBoolean toCommit = new AtomicBoolean(false);
         try (ConnectionWrapper connw = ajendaScheduler.getConnection()) {
-            connw.doWork(connection -> {
-                performExecuteAndAck(ajendaScheduler, tableName, listener, appointmentDue, cancelFlag, delay, connw, connection);
-                return null;
-            });
-            if (toCommit.get()) connw.commit();
+            boolean toCommit = connw.doWork(connection -> performExecuteAndAck(ajendaScheduler, tableName, listener, appointmentDue, cancelFlag, delay, connw, connection));
+            if (toCommit && !cancelFlag.isCancelled()){
+                connw.commit();
+                ajendaScheduler.addProcessed(1);
+            }
         }
     }
 
-    private static void performExecuteAndAck(AjendaScheduler ajendaScheduler, String tableName, TransactionalAppointmentListener listener, AppointmentDue appointmentDue, CancelFlag cancelFlag, long delay, ConnectionWrapper connw, Connection connection) throws SQLException {
+    private static boolean performExecuteAndAck(AjendaScheduler ajendaScheduler, String tableName, TransactionalAppointmentListener listener, AppointmentDue appointmentDue, CancelFlag cancelFlag, long delay, ConnectionWrapper connw, Connection connection) throws SQLException {
         String sql = String.format(ACK_ONE_QUERY, tableName);
         final long nowEpoch = ajendaScheduler.getClock().nowEpochMs();
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
@@ -293,10 +292,7 @@ class AtLeastOnceModel {
                         return connw;
                     }
                 });
-                if (!cancelFlag.isCancelled()) {
-
-                    ajendaScheduler.addProcessed(1);
-                }
+                return true;
             }
         } catch (UnhandledAppointmentException th) {
             //Controlled error
@@ -305,6 +301,7 @@ class AtLeastOnceModel {
             //TODO free or ignore until expiration
             th.printStackTrace();
         }
+        return false;
     }
 
     private static List<AppointmentDue> selectAndUpdate(
