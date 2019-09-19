@@ -380,7 +380,7 @@ public class AjendaScheduler extends AbstractAjendaBooker {
         }
 
         //Connection In
-        public void readAtLeastOnce(long timeout, TransactionalAppointmentListener listener) throws Exception {
+        public void readAtLeastOnceTransactional(long timeout, TransactionalAppointmentListener listener) throws Exception {
             long remainingDelay = 0L;
             if (AjendaScheduler.this.pollerScheduledFuture != null) {
                 remainingDelay = AjendaScheduler.this.pollerScheduledFuture.getDelay(TimeUnit.MILLISECONDS);
