@@ -227,7 +227,7 @@ public class AjendaScheduler extends AbstractAjendaBooker {
         }
 
         //Connection In
-        public void readAtLeastOnce(long timeout, TransactionalAppointmentListener listener) throws Exception {
+        public void readAtLeastOnceTransactional(long timeout, TransactionalAppointmentListener listener) throws Exception {
             AtLeastOnceModel.process(
                     AjendaScheduler.this,
                     0,
