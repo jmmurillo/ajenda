@@ -19,8 +19,7 @@ public class JdbcConnectionWrapper implements ConnectionWrapper {
             if (connection == null) {
                 connection = connectionFactory.getConnection();
                 if (connection.getAutoCommit()) {
-                    connection = null;
-                    throw new IllegalStateException("Connection must have auto-commit disabled");
+                    connection.setAutoCommit(false);
                 }
             }
         }
@@ -38,10 +37,16 @@ public class JdbcConnectionWrapper implements ConnectionWrapper {
     @Override
     public void close() throws Exception {
         synchronized (this) {
-            if (!committed) this.connection.rollback();
-            this.connection.close();
-            this.connectionFactory = null;
-            this.connection = null;
+            try {
+                if (!committed && connection != null) {
+                    this.connection.rollback();
+                }
+            } finally {
+                this.connection.close();
+                this.connectionFactory = null;
+                this.connection = null;
+            }
+
         }
     }
 }

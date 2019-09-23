@@ -16,10 +16,9 @@ public class HibernateConnectionWrapper implements ConnectionWrapper {
         this.sessionFactory = hibernateSessionFactory;
     }
 
-
     @Override
     public synchronized <R> R doWork(JdbcWork<R> jdbcWork) throws Exception {
-        synchronized(this) {
+        synchronized (this) {
             if (transaction == null) {
                 session = sessionFactory.getSession();
                 transaction = session.beginTransaction();
@@ -30,7 +29,7 @@ public class HibernateConnectionWrapper implements ConnectionWrapper {
 
     @Override
     public void commit() throws SQLException {
-        synchronized(this) {
+        synchronized (this) {
             this.transaction.commit();
             this.committed = true;
         }
@@ -39,11 +38,17 @@ public class HibernateConnectionWrapper implements ConnectionWrapper {
     @Override
     public void close() throws Exception {
         synchronized (this) {
-            if (!committed) this.transaction.rollback();
-            this.session.close();
-            this.sessionFactory = null;
-            this.session = null;
-            this.transaction = null;
+            try {
+                if (!committed && transaction != null) {
+                    this.transaction.rollback();
+                }
+            } finally {
+                this.session.close();
+                this.sessionFactory = null;
+                this.session = null;
+                this.transaction = null;
+            }
+
         }
     }
 }
