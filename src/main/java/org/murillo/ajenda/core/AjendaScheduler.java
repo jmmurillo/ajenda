@@ -1,6 +1,9 @@
 package org.murillo.ajenda.core;
 
-import org.murillo.ajenda.dto.*;
+import org.murillo.ajenda.dto.CancellableAppointmentListener;
+import org.murillo.ajenda.dto.Clock;
+import org.murillo.ajenda.dto.SimpleAppointmentListener;
+import org.murillo.ajenda.dto.TransactionalAppointmentListener;
 
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -8,19 +11,20 @@ import java.util.concurrent.atomic.AtomicLong;
 public class AjendaScheduler extends AbstractAjendaBooker {
 
     public static final String DEFAULT_SCHEMA_NAME = "public";
-    
+    private static final int DEFAULT_QUEUE_SIZE = 1000;
+
     protected int maxQueueSize;
     protected ScheduledThreadPoolExecutor executor;
     protected ScheduledThreadPoolExecutor poller;
     protected volatile ScheduledFuture<?> pollerScheduledFuture = null;
     private boolean ownClock = false;
-    
+
     private long startTime;
     private AtomicLong readCount = new AtomicLong(0);
     private AtomicLong processedCount = new AtomicLong(0);
     private long beganToProcessCount = 0;
     private double meanLag = 0.0;
-    
+
 
     public AjendaScheduler(ConnectionFactory dataSource, String topic, String customSchema) throws Exception {
         this(dataSource, topic, new SyncedClock(dataSource), customSchema);
@@ -37,7 +41,7 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                 dataSource,
                 topic,
                 Runtime.getRuntime().availableProcessors(),
-                3 * Runtime.getRuntime().availableProcessors(),
+                DEFAULT_QUEUE_SIZE,
                 clock,
                 customSchema);
     }
@@ -47,7 +51,7 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                 dataSource,
                 topic,
                 Runtime.getRuntime().availableProcessors(),
-                3 * Runtime.getRuntime().availableProcessors(),
+                DEFAULT_QUEUE_SIZE,
                 clock,
                 DEFAULT_SCHEMA_NAME);
     }
@@ -76,22 +80,22 @@ public class AjendaScheduler extends AbstractAjendaBooker {
             String schemaName
     ) throws Exception {
         super(
-          dataSource,
-          topic,
-          schemaName,
-          clock      
+                dataSource,
+                topic,
+                schemaName,
+                clock
         );
-        
+
         if (concurrencyLevel <= 0) throw new IllegalArgumentException("concurrencyLevel must be greater than zero");
         if (maxQueueSize <= 0) throw new IllegalArgumentException("maxQueueSize must be greater than zero");
-        
+
         InitializationModel.initTableForTopic(dataSource, topic, schemaName, tableName, periodicTableName);
         this.maxQueueSize = maxQueueSize;
         this.executor = new ScheduledThreadPoolExecutor(concurrencyLevel, new ThreadPoolExecutor.DiscardPolicy());
         this.poller = new ScheduledThreadPoolExecutor(1, new ThreadPoolExecutor.DiscardPolicy());
-        
+
         this.startTime = clock.nowEpochMs();
-        
+
         //TODO Ofrecer estadísticas de trabajos en proceso, en cola, etc.
     }
 
@@ -239,7 +243,7 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                     customCondition);
         }
     }
-    
+
     public class CheckAgendaPeriodically {
 
         private int limitSize;
@@ -438,14 +442,14 @@ public class AjendaScheduler extends AbstractAjendaBooker {
 
     }
 
-    void addRead(int read){
+    void addRead(int read) {
         this.readCount.addAndGet(read);
     }
 
-    void addProcessed(int processed){
+    void addProcessed(int processed) {
         this.processedCount.addAndGet(processed);
     }
-    
+
     public int remainingSlots() {
         return idleThreads() + queueFreeSlots();
     }
