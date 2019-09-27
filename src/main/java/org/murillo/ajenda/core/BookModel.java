@@ -303,7 +303,7 @@ class BookModel<T extends Connection> {
 
                 return null;
             });
-            if(exception == null) connw.commit();
+            if (exception == null) connw.commit();
             else throw exception;
         }
     }
@@ -462,8 +462,8 @@ class BookModel<T extends Connection> {
             firstExecutionTimestamp = nowEpochMs;
         }
 
-        if (booking.getPatternType() != PeriodicPatternType.FIXED_RATE
-                && booking.getPatternType() != PeriodicPatternType.FIXED_DELAY) {
+
+        if (booking.getPatternType().isCron()) {
             CronType cronType;
             switch (booking.getPatternType()) {
                 case CRON_CRON4J:
@@ -482,6 +482,13 @@ class BookModel<T extends Connection> {
             }
 
             firstExecutionTimestamp = getCronNextDueTimestamp(booking, cronType, firstExecutionTimestamp);
+
+        } else if (booking.isStartOnPeriodMultiple()) {
+            long rate = Long.parseLong(booking.getPattern(), 16);
+            long remainder = firstExecutionTimestamp % rate;
+            if (remainder != 0) {
+                firstExecutionTimestamp += rate - remainder;
+            }
         }
 
         timestamps.add(firstExecutionTimestamp);
@@ -490,7 +497,7 @@ class BookModel<T extends Connection> {
     }
 
     private static List<Long> getNextDueTimestamps(
-            PeriodicAppointmentBooking bookings,
+            PeriodicAppointmentBooking booking,
             long nowEpochMs,
             long previousDueDate,
             int size,
@@ -498,9 +505,9 @@ class BookModel<T extends Connection> {
 
         if (size <= 0) return timestamps;
 
-        if (bookings.getPatternType() == PeriodicPatternType.FIXED_RATE) {
-            long rate = Long.parseLong(bookings.getPattern(), 16);
-            if (bookings.isSkipMissed()) {
+        if (booking.getPatternType() == PeriodicPatternType.FIXED_RATE) {
+            long rate = Long.parseLong(booking.getPattern(), 16);
+            if (booking.isSkipMissed()) {
                 long due = previousDueDate +
                         Math.max(1L,
                                 Math.round(0.5 + (nowEpochMs - previousDueDate) / (double) rate))
@@ -522,12 +529,12 @@ class BookModel<T extends Connection> {
                     nextDue += rate;
                 }
             }
-        } else if (bookings.getPatternType() == PeriodicPatternType.FIXED_DELAY) {
-            long rate = Long.parseLong(bookings.getPattern(), 16);
+        } else if (booking.getPatternType() == PeriodicPatternType.FIXED_DELAY) {
+            long rate = Long.parseLong(booking.getPattern(), 16);
             timestamps.add(Math.max(nowEpochMs, previousDueDate) + rate);
         } else {
             CronType cronType;
-            switch (bookings.getPatternType()) {
+            switch (booking.getPatternType()) {
                 case CRON_CRON4J:
                     cronType = CronType.CRON4J;
                     break;
@@ -543,23 +550,23 @@ class BookModel<T extends Connection> {
                     break;
             }
 
-            if (bookings.isSkipMissed()) {
-                long due = getCronNextDueTimestamp(bookings, cronType, nowEpochMs);
+            if (booking.isSkipMissed()) {
+                long due = getCronNextDueTimestamp(booking, cronType, nowEpochMs);
                 timestamps.add(due);
                 long nextDue = due;
                 while (//nextDue < nowEpochMs + size * lookAhead &&
                         timestamps.size() < size) {
-                    nextDue = getCronNextDueTimestamp(bookings, cronType, nextDue);
+                    nextDue = getCronNextDueTimestamp(booking, cronType, nextDue);
                     timestamps.add(nextDue);
                 }
             } else {
-                long due = getCronNextDueTimestamp(bookings, cronType, previousDueDate);
+                long due = getCronNextDueTimestamp(booking, cronType, previousDueDate);
                 timestamps.add(due);
-                long nextDue = getCronNextDueTimestamp(bookings, cronType, due);
+                long nextDue = getCronNextDueTimestamp(booking, cronType, due);
                 while (//nextDue < nowEpochMs + size * lookAhead &&
                         timestamps.size() < size) {
                     timestamps.add(nextDue);
-                    nextDue = getCronNextDueTimestamp(bookings, cronType, nextDue);
+                    nextDue = getCronNextDueTimestamp(booking, cronType, nextDue);
                 }
             }
         }

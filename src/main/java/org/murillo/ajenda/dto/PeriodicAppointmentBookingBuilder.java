@@ -15,6 +15,7 @@ public final class PeriodicAppointmentBookingBuilder {
     private UUID appointmentUid;
     private PeriodicPatternType patternType;
     private long startTimestamp = 0;
+    private boolean startOnMultiple = false;
     private String pattern;
     private int ttl;
     private String payload;
@@ -61,7 +62,12 @@ public final class PeriodicAppointmentBookingBuilder {
         this.startTimestamp = 0L;
         return this;
     }
-    
+
+    public PeriodicAppointmentBookingBuilder withStartOnPeriodMultiple(boolean startOnMultiple){
+        this.startOnMultiple = startOnMultiple;
+        return this;
+    }
+
     public PeriodicAppointmentBookingBuilder withFixedPeriod(long period, PeriodicPatternType patternType) {
         if (patternType == null) throw new IllegalArgumentException("patternType must not be null");
         this.patternType = patternType;
@@ -156,6 +162,7 @@ public final class PeriodicAppointmentBookingBuilder {
         periodicAppointmentBooking.setKeyIteration(keyIteration);
         periodicAppointmentBooking.setSkipMissed(skipMissed);
         periodicAppointmentBooking.setStartTimestamp(startTimestamp);
+        periodicAppointmentBooking.setStartOnPeriodMultiple(startOnMultiple);
 
         return periodicAppointmentBooking;
     }

@@ -1,21 +1,27 @@
 package org.murillo.ajenda.dto;
 
 public enum PeriodicPatternType {
-    FIXED_RATE(1),
-    FIXED_DELAY(2),
-    CRON_UNIX(10),
-    CRON_CRON4J(11),
-    CRON_QUARTZ(12),
-    CRON_SPRING(13);
+    FIXED_RATE(1, false),
+    FIXED_DELAY(2, false),
+    CRON_UNIX(10, true),
+    CRON_CRON4J(11, true),
+    CRON_QUARTZ(12, true),
+    CRON_SPRING(13, true);
 
     private int id;
+    private boolean isCron;
 
     public int getId() {
         return id;
     }
 
-    PeriodicPatternType(int id) {
+    public boolean isCron() {
+        return isCron;
+    }
+
+    PeriodicPatternType(int id, boolean isCron) {
         this.id = id;
+        this.isCron = isCron;
     }
 
     public static PeriodicPatternType fromId(int id) {

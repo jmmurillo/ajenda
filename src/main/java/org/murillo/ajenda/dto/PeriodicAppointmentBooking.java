@@ -14,6 +14,7 @@ public class PeriodicAppointmentBooking {
     private int keyIteration;
     private boolean skipMissed;
     private long startTimestamp;
+    private boolean startOnPeriodMultiple;
 
     public PeriodicAppointmentBooking() {
     }
@@ -27,7 +28,8 @@ public class PeriodicAppointmentBooking {
              HashMap<String, Object> extraParams,
              int keyIteration,
              boolean skipMissed,
-             long startTimestamp) {
+             long startTimestamp,
+             boolean startOnPeriodMultiple) {
 
         this.appointmentUid = appointmentUid;
         this.patternType = patternType;
@@ -38,6 +40,7 @@ public class PeriodicAppointmentBooking {
         this.keyIteration = keyIteration;
         this.skipMissed = skipMissed;
         this.startTimestamp = startTimestamp;
+        this.startOnPeriodMultiple = startOnPeriodMultiple;
     }
 
     public UUID getAppointmentUid() {
@@ -76,6 +79,10 @@ public class PeriodicAppointmentBooking {
         return startTimestamp;
     }
 
+    public boolean isStartOnPeriodMultiple() {
+        return startOnPeriodMultiple;
+    }
+
     void setAppointmentUid(UUID appointmentUid) {
         this.appointmentUid = appointmentUid;
     }
@@ -110,5 +117,9 @@ public class PeriodicAppointmentBooking {
 
     void setStartTimestamp(long startTimestamp) {
         this.startTimestamp = startTimestamp;
+    }
+
+    void setStartOnPeriodMultiple(boolean startOnPeriodMultiple) {
+        this.startOnPeriodMultiple = startOnPeriodMultiple;
     }
 }
