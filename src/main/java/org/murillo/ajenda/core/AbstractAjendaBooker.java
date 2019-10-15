@@ -1,6 +1,8 @@
 package org.murillo.ajenda.core;
 
-import org.murillo.ajenda.dto.*;
+import org.murillo.ajenda.dto.AppointmentBooking;
+import org.murillo.ajenda.dto.Clock;
+import org.murillo.ajenda.dto.PeriodicAppointmentBooking;
 
 import java.util.Arrays;
 import java.util.List;
@@ -23,7 +25,7 @@ public abstract class AbstractAjendaBooker implements AjendaBooker {
         if (topic == null || topic.isEmpty()) throw new IllegalArgumentException("topic must not be empty");
         if (schemaName == null || schemaName.isEmpty())
             throw new IllegalArgumentException("schema name must not be empty");
-        
+
         this.dataSource = dataSource;
         this.topic = topic;
         this.schemaName = schemaName;
@@ -95,35 +97,23 @@ public abstract class AbstractAjendaBooker implements AjendaBooker {
     }
 
     @Override
-    public void bookPeriodic(PeriodicAppointmentBooking... bookings) throws Exception {
-        bookPeriodic(Arrays.asList(bookings));
+    public void bookPeriodic(
+            PeriodicBookConflictPolicy conflictPolicy,
+            PeriodicAppointmentBooking... bookings) throws Exception {
+        bookPeriodic(conflictPolicy, Arrays.asList(bookings));
     }
 
     @Override
-    public void bookPeriodic(List<PeriodicAppointmentBooking> bookings) throws Exception {
+    public void bookPeriodic(
+            PeriodicBookConflictPolicy conflictPolicy,
+            List<PeriodicAppointmentBooking> bookings) throws Exception {
         BookModel.bookPeriodic(
                 this.getTableNameWithSchema(),
                 this.getPeriodicTableNameWithSchema(),
                 this,
                 this.getClock(),
                 bookings,
-                false);
-    }
-
-    @Override
-    public void tryBookPeriodic(PeriodicAppointmentBooking... bookings) throws Exception {
-        tryBookPeriodic(Arrays.asList(bookings));
-    }
-
-    @Override
-    public void tryBookPeriodic(List<PeriodicAppointmentBooking> bookings) throws Exception {
-        BookModel.bookPeriodic(
-                this.getTableNameWithSchema(),
-                this.getPeriodicTableNameWithSchema(),
-                this,
-                this.getClock(),
-                bookings,
-                true);
+                conflictPolicy);
     }
 
     @Override
@@ -138,7 +128,7 @@ public abstract class AbstractAjendaBooker implements AjendaBooker {
                 this,
                 uuids);
     }
-    
+
     @Override
     public void cancelPeriodic(UUID... periodic_uuids) throws Exception {
         cancelPeriodic(Arrays.asList(periodic_uuids));
@@ -152,7 +142,6 @@ public abstract class AbstractAjendaBooker implements AjendaBooker {
                 this,
                 periodic_uuids);
     }
-    
-    
+
 
 }

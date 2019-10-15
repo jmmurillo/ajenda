@@ -27,13 +27,13 @@ public interface AjendaBooker extends ConnectionFactory {
 
     void book(List<AppointmentBooking> bookings) throws Exception;
 
-    void bookPeriodic(PeriodicAppointmentBooking... bookings) throws Exception;
+    void bookPeriodic(
+            PeriodicBookConflictPolicy conflictPolicy,
+            PeriodicAppointmentBooking... bookings) throws Exception;
 
-    void bookPeriodic(List<PeriodicAppointmentBooking> bookings) throws Exception;
-
-    void tryBookPeriodic(PeriodicAppointmentBooking... bookings) throws Exception;
-
-    void tryBookPeriodic(List<PeriodicAppointmentBooking> bookings) throws Exception;
+    void bookPeriodic(
+            PeriodicBookConflictPolicy conflictPolicy,
+            List<PeriodicAppointmentBooking> bookings) throws Exception;
 
     void cancel(UUID... uuids) throws Exception;
 

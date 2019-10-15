@@ -15,6 +15,7 @@ public class PeriodicAppointmentBooking {
     private boolean skipMissed;
     private long startTimestamp;
     private boolean startOnPeriodMultiple;
+    private int startOnPeriodMultipleOffset;
 
     public PeriodicAppointmentBooking() {
     }
@@ -29,7 +30,8 @@ public class PeriodicAppointmentBooking {
              int keyIteration,
              boolean skipMissed,
              long startTimestamp,
-             boolean startOnPeriodMultiple) {
+             boolean startOnPeriodMultiple,
+             int startOnPeriodMultipleOffset) {
 
         this.appointmentUid = appointmentUid;
         this.patternType = patternType;
@@ -41,6 +43,7 @@ public class PeriodicAppointmentBooking {
         this.skipMissed = skipMissed;
         this.startTimestamp = startTimestamp;
         this.startOnPeriodMultiple = startOnPeriodMultiple;
+        this.startOnPeriodMultipleOffset = startOnPeriodMultipleOffset;
     }
 
     public UUID getAppointmentUid() {
@@ -83,6 +86,10 @@ public class PeriodicAppointmentBooking {
         return startOnPeriodMultiple;
     }
 
+    public int getStartOnPeriodMultipleOffset() {
+        return startOnPeriodMultipleOffset;
+    }
+
     void setAppointmentUid(UUID appointmentUid) {
         this.appointmentUid = appointmentUid;
     }
@@ -121,5 +128,9 @@ public class PeriodicAppointmentBooking {
 
     void setStartOnPeriodMultiple(boolean startOnPeriodMultiple) {
         this.startOnPeriodMultiple = startOnPeriodMultiple;
+    }
+
+    void setStartOnPeriodMultipleOffset(int startOnPeriodMultipleOffset) {
+        this.startOnPeriodMultipleOffset = startOnPeriodMultipleOffset;
     }
 }

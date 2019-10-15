@@ -22,6 +22,7 @@ public final class PeriodicAppointmentBookingBuilder {
     private HashMap<String, Object> extraParams = new HashMap<>();
     private int keyIteration = 1;
     private boolean skipMissed = true;
+    private int startOnMultipleOffset;
 
     private PeriodicAppointmentBookingBuilder() {
     }
@@ -63,8 +64,13 @@ public final class PeriodicAppointmentBookingBuilder {
         return this;
     }
 
-    public PeriodicAppointmentBookingBuilder withStartOnPeriodMultiple(boolean startOnMultiple){
-        this.startOnMultiple = startOnMultiple;
+    public PeriodicAppointmentBookingBuilder withStartOnPeriodMultiple(){
+        return withStartOnPeriodMultiple(0);
+    }
+
+    public PeriodicAppointmentBookingBuilder withStartOnPeriodMultiple(int offset){
+        this.startOnMultiple = true;
+        this.startOnMultipleOffset = offset;
         return this;
     }
 
@@ -163,6 +169,7 @@ public final class PeriodicAppointmentBookingBuilder {
         periodicAppointmentBooking.setSkipMissed(skipMissed);
         periodicAppointmentBooking.setStartTimestamp(startTimestamp);
         periodicAppointmentBooking.setStartOnPeriodMultiple(startOnMultiple);
+        periodicAppointmentBooking.setStartOnPeriodMultipleOffset(startOnMultipleOffset);
 
         return periodicAppointmentBooking;
     }

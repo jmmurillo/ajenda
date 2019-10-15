@@ -169,7 +169,7 @@ public class AjendaScheduler extends AbstractAjendaBooker {
     public class CheckAgenda {
 
         private String customCondition;
-        private int fetchSize = 1;
+        private int fetchSize = AjendaScheduler.this.maxQueueSize;
 
         public CheckAgenda withCustomSqlCondition(String customSqlCondition) {
             this.customCondition = customSqlCondition;

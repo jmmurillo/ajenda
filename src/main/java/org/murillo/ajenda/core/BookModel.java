@@ -11,10 +11,7 @@ import java.sql.*;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -34,13 +31,22 @@ class BookModel<T extends Connection> {
             "INSERT INTO %s "
                     + "(uuid, creation_date, due_date, timeout_date, ttl, attempts, payload, periodic_uuid, flags%s) "
                     + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?%s) "
-                    + "ON CONFLICT (uuid) DO NOTHING";
+                    + "ON CONFLICT (uuid) DO NOTHING ";
 
     private static final String PERIODIC_BOOK_INSERT_QUERY =
             "INSERT INTO %s "
                     + "(uuid, creation_date, pattern_type, pattern, ttl, payload, key_iteration, skip_missed%s) "
                     + "VALUES (?, ?, ?, ?, ?, ?, ?, ?%s) "
                     + "ON CONFLICT DO NOTHING ";
+
+    private static final String PERIODIC_BOOK_INSERT_UPDATE_QUERY =
+            "INSERT INTO %s "
+                    + "(uuid, creation_date, pattern_type, pattern, ttl, payload, key_iteration, skip_missed%s) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?%s) "
+                    + "ON CONFLICT DO UPDATE SET "
+                    + "(uuid, creation_date, pattern_type, pattern, ttl, payload, key_iteration, skip_missed%s) "
+                    + "= (?, ?, ?, ?, ?, ?, ?, ?%s) "
+                    + "RETURNING CASE WHEN xmax::text::int > 0 THEN TRUE ELSE FALSE END ";
 
     private static final String PERIODIC_BOOK_SELECT_QUERY =
             "SELECT * "
@@ -230,7 +236,7 @@ class BookModel<T extends Connection> {
             ConnectionFactory connectionFactory,
             Clock clock,
             List<PeriodicAppointmentBooking> periodicBookings,
-            boolean ignoreConflicts
+            PeriodicBookConflictPolicy onConflict
     ) throws Exception {
 
         long nowEpochMs = clock.nowEpochMs();
@@ -254,49 +260,105 @@ class BookModel<T extends Connection> {
                             extraColumnsQuestionMarks
                     );
 
-                    String periodicBookSql = String.format(
-                            PERIODIC_BOOK_INSERT_QUERY,
-                            periodicTableName,
-                            extraColumnsNames,
-                            extraColumnsQuestionMarks
-                    );
+                    if (PeriodicBookConflictPolicy.CANCEL_AND_OVERWRITE.equals(onConflict)) {
+                        try {
+                            cancelPeriodic(
+                                    tableName,
+                                    periodicTableName,
+                                    connw::recursiveConnectionWrapper,
+                                    Arrays.asList(periodic.getAppointmentUid()));
+                        } catch (SQLException e) {
+                            throw e;
+                        } catch (Exception e) {
+                            //Not proud of this
+                            throw new SQLException("Exception wrapper", e);
 
-                    //Insert periodic booking
-                    try (PreparedStatement stmt = connection.prepareStatement(periodicBookSql)) {
-
-                        int place = 1;
-
-                        //FOR INSERT
-                        stmt.setObject(place++, periodic.getAppointmentUid());
-                        stmt.setLong(place++, nowEpochMs);
-                        stmt.setInt(place++, periodic.getPatternType().getId());
-                        stmt.setString(place++, periodic.getPattern());
-                        stmt.setInt(place++, periodic.getTtl());
-                        stmt.setString(place++, periodic.getPayload());
-                        stmt.setInt(place++, periodic.getKeyIteration());
-                        stmt.setBoolean(place++, periodic.isSkipMissed());
-
-                        if (extraColumnsList != null) {
-                            for (int i = 0; i < extraColumnsList.size(); i++) {
-                                Object value = extraColumnsList.get(i).getValue();
-                                if (value != null) {
-                                    stmt.setObject(place++, value);
-                                } else {
-                                    stmt.setNull(place++, Types.NULL);
-                                }
-                            }
-                        }
-                        stmt.execute();
-                        if (stmt.getUpdateCount() == 0) {
-                            if (ignoreConflicts) continue;
-                            return new ConflictingPeriodicBookingException(periodic.getAppointmentUid());
                         }
                     }
 
-                    //Add first N iterations
-                    try (PreparedStatement stmt = connection.prepareStatement(bookSql)) {
-                        List<Long> dueTimestamps = getFirstDueTimestamps(periodic, nowEpochMs, periodic.getKeyIteration());
-                        insertPeriodicIterations(periodic, dueTimestamps, stmt, extraColumnsList, nowEpochMs, 0);
+                    if (PeriodicBookConflictPolicy.OVERWRITE.equals(onConflict)
+                            || PeriodicBookConflictPolicy.CANCEL_AND_OVERWRITE.equals(onConflict)) {
+
+                        String periodicBookSql = String.format(
+                                PERIODIC_BOOK_INSERT_UPDATE_QUERY,
+                                periodicTableName,
+                                extraColumnsNames,
+                                extraColumnsQuestionMarks,
+                                extraColumnsNames,
+                                extraColumnsQuestionMarks
+                        );
+
+                        //Insert periodic booking
+                        try (PreparedStatement stmt = connection.prepareStatement(periodicBookSql)) {
+
+                            int[] place = new int[]{1};
+
+                            //FOR INSERT
+                            fillParamsForInsert(nowEpochMs, extraColumnsList, periodic, stmt, place);
+
+                            //FOR UPDATE
+                            fillParamsForInsert(nowEpochMs, extraColumnsList, periodic, stmt, place);
+
+                            boolean updated;
+                            try (ResultSet resultSet = stmt.executeQuery()) {
+                                resultSet.next();
+                                updated = resultSet.getBoolean(1);
+                            }
+                            if (!updated || PeriodicBookConflictPolicy.CANCEL_AND_OVERWRITE.equals(onConflict)) {
+                                //Add first N iterations
+                                try (PreparedStatement stmt2 = connection.prepareStatement(bookSql)) {
+                                    List<Long> dueTimestamps = getFirstDueTimestamps(periodic, nowEpochMs, periodic.getKeyIteration());
+                                    insertPeriodicIterations(periodic, dueTimestamps, stmt2, extraColumnsList, nowEpochMs, 0);
+                                }
+                            } else {
+                                //Iterations already exist
+                            }
+                        }
+
+                    } else {
+
+                        String periodicBookSql = String.format(
+                                PERIODIC_BOOK_INSERT_QUERY,
+                                periodicTableName,
+                                extraColumnsNames,
+                                extraColumnsQuestionMarks
+                        );
+
+                        //Insert periodic booking
+                        try (PreparedStatement stmt = connection.prepareStatement(periodicBookSql)) {
+
+                            int[] place = new int[]{1};
+
+                            //FOR INSERT
+                            fillParamsForInsert(nowEpochMs, extraColumnsList, periodic, stmt, place);
+                            stmt.execute();
+                            if (stmt.getUpdateCount() == 0) {
+                                if (PeriodicBookConflictPolicy.IGNORE.equals(onConflict)) continue;
+                                return new ConflictingPeriodicBookingException(periodic.getAppointmentUid());
+                            } else {
+                                //Add first N iterations
+                                try (PreparedStatement stmt2 = connection.prepareStatement(bookSql)) {
+                                    List<Long> dueTimestamps = getFirstDueTimestamps(periodic, nowEpochMs, periodic.getKeyIteration());
+                                    insertPeriodicIterations(periodic, dueTimestamps, stmt2, extraColumnsList, nowEpochMs, 0);
+                                }
+                            }
+                        }
+                    }
+
+                    switch (onConflict) {
+
+                        case OVERWRITE:
+                            //
+                            break;
+                        case FAIL:
+                        case IGNORE:
+                        case CANCEL_AND_OVERWRITE:
+                            //Add first N iterations
+                            try (PreparedStatement stmt = connection.prepareStatement(bookSql)) {
+                                List<Long> dueTimestamps = getFirstDueTimestamps(periodic, nowEpochMs, periodic.getKeyIteration());
+                                insertPeriodicIterations(periodic, dueTimestamps, stmt, extraColumnsList, nowEpochMs, 0);
+                            }
+                            break;
                     }
 
                 }
@@ -305,6 +367,28 @@ class BookModel<T extends Connection> {
             });
             if (exception == null) connw.commit();
             else throw exception;
+        }
+    }
+
+    private static void fillParamsForInsert(long nowEpochMs, ArrayList<Map.Entry<String, ?>> extraColumnsList, PeriodicAppointmentBooking periodic, PreparedStatement stmt, int[] place) throws SQLException {
+        stmt.setObject(place[0]++, periodic.getAppointmentUid());
+        stmt.setLong(place[0]++, nowEpochMs);
+        stmt.setInt(place[0]++, periodic.getPatternType().getId());
+        stmt.setString(place[0]++, periodic.getPattern());
+        stmt.setInt(place[0]++, periodic.getTtl());
+        stmt.setString(place[0]++, periodic.getPayload());
+        stmt.setInt(place[0]++, periodic.getKeyIteration());
+        stmt.setBoolean(place[0]++, periodic.isSkipMissed());
+
+        if (extraColumnsList != null) {
+            for (int i = 0; i < extraColumnsList.size(); i++) {
+                Object value = extraColumnsList.get(i).getValue();
+                if (value != null) {
+                    stmt.setObject(place[0]++, value);
+                } else {
+                    stmt.setNull(place[0]++, Types.NULL);
+                }
+            }
         }
     }
 
@@ -487,7 +571,7 @@ class BookModel<T extends Connection> {
             long rate = Long.parseLong(booking.getPattern(), 16);
             long remainder = firstExecutionTimestamp % rate;
             if (remainder != 0) {
-                firstExecutionTimestamp += rate - remainder;
+                firstExecutionTimestamp += rate - remainder + booking.getStartOnPeriodMultipleOffset();
             }
         }
 

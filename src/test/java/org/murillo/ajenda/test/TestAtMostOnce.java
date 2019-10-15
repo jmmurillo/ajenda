@@ -8,6 +8,7 @@ import org.junit.ClassRule;
 import org.murillo.ajenda.core.AjendaBooker;
 import org.murillo.ajenda.core.AjendaScheduler;
 import org.murillo.ajenda.core.ConnectionFactoryFactory;
+import org.murillo.ajenda.core.PeriodicBookConflictPolicy;
 import org.murillo.ajenda.dto.*;
 import org.murillo.ajenda.test.utils.TestDataSource;
 
@@ -300,6 +301,7 @@ public class TestAtMostOnce {
                     });
 
             scheduler.bookPeriodic(
+                    PeriodicBookConflictPolicy.FAIL,
                     PeriodicAppointmentBookingBuilder.aPeriodicBooking()
                             .withFixedPeriod(500, PeriodicPatternType.FIXED_RATE)
                             .withPayload(payload)
@@ -338,6 +340,7 @@ public class TestAtMostOnce {
                     });
 
             scheduler.bookPeriodic(
+                    PeriodicBookConflictPolicy.FAIL,
                     PeriodicAppointmentBookingBuilder.aPeriodicBooking()
                             .withFixedPeriod(500, PeriodicPatternType.FIXED_DELAY)
                             .withSkipMissed(false)
@@ -379,6 +382,7 @@ public class TestAtMostOnce {
 
             UUID periodicUid = UUID.randomUUID();
             scheduler.bookPeriodic(
+                    PeriodicBookConflictPolicy.FAIL,
                     PeriodicAppointmentBookingBuilder.aPeriodicBooking()
                             .withFixedPeriod(500, PeriodicPatternType.FIXED_RATE)
                             .withPayload(payload)
