@@ -43,7 +43,7 @@ class BookModel<T extends Connection> {
             "INSERT INTO %s "
                     + "(uuid, creation_date, pattern_type, pattern, ttl, payload, key_iteration, skip_missed%s) "
                     + "VALUES (?, ?, ?, ?, ?, ?, ?, ?%s) "
-                    + "ON CONFLICT DO UPDATE SET "
+                    + "ON CONFLICT (uuid) DO UPDATE SET "
                     + "(uuid, creation_date, pattern_type, pattern, ttl, payload, key_iteration, skip_missed%s) "
                     + "= (?, ?, ?, ?, ?, ?, ?, ?%s) "
                     + "RETURNING CASE WHEN xmax::text::int > 0 THEN TRUE ELSE FALSE END ";

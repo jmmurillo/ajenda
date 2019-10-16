@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.murillo.ajenda.core.Common.extractAppointmentDue;
 
@@ -198,6 +197,8 @@ class AtLeastOnceModel {
                                 //TODO free or ignore until expiration
                                 th.printStackTrace();
                                 return;
+                            } finally {
+                                if (blocking) semaphore.release();
                             }
                         },
                         delay > 0 ? delay : 0,
@@ -214,8 +215,8 @@ class AtLeastOnceModel {
         } finally {
             if (blocking) semaphore.acquire(scheduled);
         }
-    }    
-    
+    }
+
     private static void ackIndividually(AjendaScheduler ajendaScheduler, String tableName, AppointmentDue appointmentDue, long lookAhead, CancelFlag cancelFlag) throws Exception {
         try (ConnectionWrapper conn = ajendaScheduler.getConnection()) {
             conn.doWork(connection -> {
@@ -262,7 +263,7 @@ class AtLeastOnceModel {
             long delay) throws Exception {
         try (ConnectionWrapper connw = ajendaScheduler.getConnection()) {
             boolean toCommit = connw.doWork(connection -> performExecuteAndAck(ajendaScheduler, tableName, listener, appointmentDue, cancelFlag, delay, connw, connection));
-            if (toCommit && !cancelFlag.isCancelled()){
+            if (toCommit && !cancelFlag.isCancelled()) {
                 connw.commit();
                 ajendaScheduler.addProcessed(1);
             }
