@@ -35,7 +35,7 @@ class AtMostOnceModel {
                     + "    AND timeout_date <= ? "
                     + "    AND %s "  //CUSTOM CONDITION
                     + "  ORDER BY due_date, timeout_date ASC "
-                    + "  FETCH FIRST ? ROWS ONLY "
+                    + "  FETCH FIRST (?) ROWS ONLY "
                     + "  FOR UPDATE SKIP LOCKED "
                     + ")) RETURNING *";
 

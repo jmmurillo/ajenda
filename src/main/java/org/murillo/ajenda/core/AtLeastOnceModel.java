@@ -1,6 +1,8 @@
 package org.murillo.ajenda.core;
 
 import org.murillo.ajenda.dto.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -15,6 +17,8 @@ import java.util.concurrent.TimeUnit;
 import static org.murillo.ajenda.core.Common.extractAppointmentDue;
 
 class AtLeastOnceModel {
+
+    private static Logger LOGGER = LoggerFactory.getLogger(AtLeastOnceModel.class);
 
     //AT_LEAST_ONCE_ACKED_QUERY
     //COMMIT
@@ -36,7 +40,7 @@ class AtLeastOnceModel {
                     + "    AND timeout_date <= ? "
                     + "    AND %s "  //CUSTOM CONDITION
                     + "  ORDER BY due_date, timeout_date "
-                    + "  FETCH FIRST ? ROWS ONLY "
+                    + "  FETCH FIRST (?) ROWS ONLY "
                     + "  FOR UPDATE SKIP LOCKED "
                     + ")) RETURNING *";
 
@@ -114,34 +118,20 @@ class AtLeastOnceModel {
                 CancelFlag cancelFlag = new CancelFlag();
                 final ScheduledFuture<?> future = ajendaScheduler.getExecutor().schedule(() -> {
                             try {
-                                try {
-                                    if (isNotExpired(ajendaScheduler.getClock(), a)
-                                            && isNotMissed(a, delay)) {
-                                        ajendaScheduler.addBeganToProcess(a.getDueTimestamp());
-                                        listener.receive(a, cancelFlag);
-                                        ajendaScheduler.addProcessed(1);
-                                    }
-                                } catch (UnhandledAppointmentException th) {
-                                    //Controlled exception
-                                    return;
-                                } catch (Throwable th) {
-                                    //Unexpected exception
-                                    //TODO log
-                                    th.printStackTrace();
-                                    return;
-                                }
-                                try {
-                                    ackIndividually(
+                                if (!cancelFlag.isCancelled())
+                                    executeThenAck(
                                             ajendaScheduler,
+                                            lookAhead,
+                                            listener,
                                             tableName,
                                             a,
-                                            lookAhead,
+                                            delay,
                                             cancelFlag);
-                                } catch (Throwable th) {
+
+                            }catch (Throwable th) {
                                     //TODO log
                                     th.printStackTrace();
                                     return;
-                                }
                             } finally {
                                 if (blocking) semaphore.release();
                             }
@@ -181,7 +171,6 @@ class AtLeastOnceModel {
                 long delay = a.getDueTimestamp() - nowEpoch;
                 CancelFlag cancelFlag = new CancelFlag();
                 final ScheduledFuture<?> future = ajendaScheduler.getExecutor().schedule(() -> {
-
                             try {
                                 if (!cancelFlag.isCancelled()) executeAndAck(
                                         ajendaScheduler,
@@ -193,10 +182,8 @@ class AtLeastOnceModel {
                                         delay
                                 );
                             } catch (Throwable th) {
-                                //TODO log
+                                LOGGER.error(String.format("Unexpected error processing appointment %s", a), th);
                                 //TODO free or ignore until expiration
-                                th.printStackTrace();
-                                return;
                             } finally {
                                 if (blocking) semaphore.release();
                             }
@@ -253,6 +240,43 @@ class AtLeastOnceModel {
         }
     }
 
+    private static void executeThenAck(
+            AjendaScheduler ajendaScheduler,
+            long lookAhead,
+            CancellableAppointmentListener listener,
+            String tableName,
+            AppointmentDue appointmentDue,
+            long delay,
+            CancelFlag cancelFlag) throws Exception {
+        try {
+            if (isNotExpired(ajendaScheduler.getClock(), appointmentDue)
+                    && isNotMissed(appointmentDue, delay)) {
+                ajendaScheduler.addBeganToProcess(appointmentDue.getDueTimestamp());
+                LOGGER.debug("About to process appointment {}", appointmentDue);
+                listener.receive(appointmentDue, cancelFlag);
+                LOGGER.debug("Just processed appointment {}", appointmentDue);
+                ajendaScheduler.addProcessed(1);
+            } else {
+                LOGGER.debug("Ignoring appointment because it is expired or missed: {}", appointmentDue);
+            }
+
+            ackIndividually(
+                    ajendaScheduler,
+                    tableName,
+                    appointmentDue,
+                    lookAhead,
+                    cancelFlag);
+        } catch (UnhandledAppointmentException th) {
+            //Controlled exception
+            LOGGER.warn(String.format("Controlled error processing appointment %s", appointmentDue), th);
+            return;
+        } catch (Throwable th) {
+            //Unexpected exception
+            LOGGER.error(String.format("Unexpected error processing appointment %s", appointmentDue), th);
+        }
+
+    }
+
     private static void executeAndAck(
             AjendaScheduler ajendaScheduler,
             String tableName,
@@ -287,20 +311,24 @@ class AtLeastOnceModel {
             if (isNotExpired(ajendaScheduler.getClock(), appointmentDue)
                     && isNotMissed(appointmentDue, delay)) {
                 ajendaScheduler.addBeganToProcess(appointmentDue.getDueTimestamp());
+                LOGGER.debug("About to process appointment {}", appointmentDue);
                 listener.receive(appointmentDue, cancelFlag, new AbstractAjendaBooker(ajendaScheduler) {
                     @Override
                     public ConnectionWrapper getConnection() {
                         return connw;
                     }
                 });
+                LOGGER.debug("Just processed appointment {}", appointmentDue);
                 return true;
+            } else {
+                LOGGER.debug("Ignoring appointment because it is expired or missed: {}", appointmentDue);
             }
         } catch (UnhandledAppointmentException th) {
             //Controlled error
+            LOGGER.warn(String.format("Controlled error processing appointment %s", appointmentDue), th);
         } catch (Throwable th) {
-            //TODO log
+            LOGGER.error(String.format("Unexpected error processing appointment %s", appointmentDue), th);
             //TODO free or ignore until expiration
-            th.printStackTrace();
         }
         return false;
     }
@@ -327,7 +355,16 @@ class AtLeastOnceModel {
         return appointments;
     }
 
-    private static void performSelectAndUpdate(long pollPeriod, int limitSize, long nowEpoch, long timeout, String customSqlCondition, String tableName, List<AppointmentDue> appointments, Connection conn) throws SQLException {
+    private static void performSelectAndUpdate(
+            long pollPeriod,
+            int limitSize,
+            long nowEpoch,
+            long timeout,
+            String customSqlCondition,
+            String tableName,
+            List<AppointmentDue> appointments,
+            Connection conn) throws SQLException {
+
         long limitDueDate = nowEpoch + pollPeriod;
 
         String sql = String.format(
@@ -350,7 +387,7 @@ class AtLeastOnceModel {
                 appointmentDue.setAttempts(appointmentDue.getAttempts() - 1);
                 appointments.add(appointmentDue);
             }
-
+            LOGGER.debug("Polled with query {}. Retrieved {} appointments", stmt, appointments.size());
         }
     }
 
