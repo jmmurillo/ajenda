@@ -8,10 +8,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class AjendaScheduler extends AbstractAjendaBooker {
 
+    public static final int CONNECTION_VALIDATION_TIMEOUT_SEC = 3;
     private static Logger LOGGER = LoggerFactory.getLogger(AjendaScheduler.class);
 
     public static final String DEFAULT_SCHEMA_NAME = "public";
@@ -28,7 +30,6 @@ public class AjendaScheduler extends AbstractAjendaBooker {
     private AtomicLong processedCount = new AtomicLong(0);
     private long beganToProcessCount = 0;
     private double meanLag = 0.0;
-
 
     public AjendaScheduler(ConnectionFactory dataSource, String topic, String customSchema) throws Exception {
         this(dataSource, topic, new SyncedClock(dataSource), customSchema);
@@ -95,12 +96,53 @@ public class AjendaScheduler extends AbstractAjendaBooker {
 
         InitializationModel.initTableForTopic(dataSource, topic, schemaName, tableName, periodicTableName);
         this.maxQueueSize = maxQueueSize;
-        this.executor = new ScheduledThreadPoolExecutor(concurrencyLevel, new ThreadPoolExecutor.DiscardPolicy());
-        this.poller = new ScheduledThreadPoolExecutor(1, new ThreadPoolExecutor.DiscardPolicy());
-
+        this.executor = new ScheduledThreadPoolExecutor(concurrencyLevel, new AjendaExecutorThreadFactory(topic), new ThreadPoolExecutor.DiscardPolicy());
+        this.executor.setRemoveOnCancelPolicy(true);
+        this.poller = new ScheduledThreadPoolExecutor(1, new AjendaPollerThreadFactory(topic), new ThreadPoolExecutor.DiscardPolicy());
+        this.poller.setRemoveOnCancelPolicy(true);
         this.startTime = clock.nowEpochMs();
 
         //TODO Ofrecer estadísticas de trabajos en proceso, en cola, etc.
+    }
+
+    private static class AjendaPollerThreadFactory implements ThreadFactory {
+        private final ThreadGroup group;
+        private final AtomicInteger threadNumber = new AtomicInteger(1);
+        private final String namePrefix;
+
+        AjendaPollerThreadFactory(String topic) {
+            SecurityManager s = System.getSecurityManager();
+            this.group = s != null ? s.getThreadGroup() : Thread.currentThread().getThreadGroup();
+            this.namePrefix = "ajenda-" + topic + "-poller-";
+        }
+
+        public Thread newThread(Runnable r) {
+            Thread t = new Thread(this.group, r, this.namePrefix + this.threadNumber.getAndIncrement(), 0L);
+            t.setDaemon(true);
+            t.setPriority((Thread.NORM_PRIORITY + Thread.MIN_PRIORITY) / 2);
+
+            return t;
+        }
+    }
+
+    private static class AjendaExecutorThreadFactory implements ThreadFactory {
+        private final ThreadGroup group;
+        private final AtomicInteger threadNumber = new AtomicInteger(1);
+        private final String namePrefix;
+
+        AjendaExecutorThreadFactory(String topic) {
+            SecurityManager s = System.getSecurityManager();
+            this.group = s != null ? s.getThreadGroup() : Thread.currentThread().getThreadGroup();
+            this.namePrefix = "ajenda-" + topic + "-executor-";
+        }
+
+        public Thread newThread(Runnable r) {
+            Thread t = new Thread(this.group, r, this.namePrefix + this.threadNumber.getAndIncrement(), 0L);
+            t.setDaemon(false);
+            t.setPriority(Thread.NORM_PRIORITY);
+
+            return t;
+        }
     }
 
     public boolean shutdown(long gracePeriodMs) {
@@ -168,6 +210,35 @@ public class AjendaScheduler extends AbstractAjendaBooker {
         beganToProcessCount++;
         final long lag = this.clock.nowEpochMs() - dueTimestamp;
         meanLag = (meanLag * beganToProcessCount + lag) / ++beganToProcessCount;
+    }
+
+    public void stopPolling() {
+        this.pollerScheduledFuture.cancel(false);
+        this.pollerScheduledFuture = null;
+    }
+
+    public boolean isPolling() {
+        return this.pollerScheduledFuture != null &&
+                this.poller.getTaskCount() > 0 &&
+                !(this.pollerScheduledFuture.isCancelled() || this.pollerScheduledFuture.isDone());
+    }
+
+    public boolean checkConnection() {
+        try (ConnectionWrapper connection = this.getConnection()) {
+             return connection.doWork(
+                    c -> c.isValid(CONNECTION_VALIDATION_TIMEOUT_SEC)
+            );
+        } catch (Exception e) {
+            LOGGER.error("Exception occurred checking connection", e);
+            return false;
+        }
+    }
+
+    public boolean checkPoller() {
+        if (poller.isShutdown()) return false;
+        if (pollerScheduledFuture == null) return true;
+        if (poller.getTaskCount() > 0) return false;
+        return !this.pollerScheduledFuture.isCancelled() && !this.pollerScheduledFuture.isDone();
     }
 
     public class CheckAgenda {

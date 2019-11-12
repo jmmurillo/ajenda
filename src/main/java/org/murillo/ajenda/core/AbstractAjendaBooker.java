@@ -1,9 +1,11 @@
 package org.murillo.ajenda.core;
 
+import org.hibernate.Session;
 import org.murillo.ajenda.dto.AppointmentBooking;
 import org.murillo.ajenda.dto.Clock;
 import org.murillo.ajenda.dto.PeriodicAppointmentBooking;
 
+import java.sql.Connection;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -87,10 +89,40 @@ public abstract class AbstractAjendaBooker implements AjendaBooker {
     }
 
     @Override
+    public void book(Session session, AppointmentBooking... bookings) throws Exception {
+        book(session, Arrays.asList(bookings));
+    }
+
+    @Override
+    public void book(Connection connection, AppointmentBooking... bookings) throws Exception {
+        book(connection, Arrays.asList(bookings));
+    }
+
+    @Override
     public void book(List<AppointmentBooking> bookings) throws Exception {
         BookModel.book(
                 this.getTableNameWithSchema(),
                 this,
+                this.getClock(),
+                0,
+                bookings);
+    }
+
+    @Override
+    public void book(Connection connection, List<AppointmentBooking> bookings) throws Exception {
+        BookModel.book(
+                this.getTableNameWithSchema(),
+                () -> new JdbcConnectionWrapper(() -> connection).recursiveConnectionWrapper(),
+                this.getClock(),
+                0,
+                bookings);
+    }
+
+    @Override
+    public void book(Session session, List<AppointmentBooking> bookings) throws Exception {
+        BookModel.book(
+                this.getTableNameWithSchema(),
+                () -> new HibernateConnectionWrapper(() -> session).recursiveConnectionWrapper(),
                 this.getClock(),
                 0,
                 bookings);
@@ -105,12 +137,57 @@ public abstract class AbstractAjendaBooker implements AjendaBooker {
 
     @Override
     public void bookPeriodic(
+            Connection connection,
+            PeriodicBookConflictPolicy conflictPolicy,
+            PeriodicAppointmentBooking... bookings) throws Exception {
+        bookPeriodic(connection, conflictPolicy, Arrays.asList(bookings));
+    }
+
+    @Override
+    public void bookPeriodic(
+            Session session,
+            PeriodicBookConflictPolicy conflictPolicy,
+            PeriodicAppointmentBooking... bookings) throws Exception {
+        bookPeriodic(session, conflictPolicy, Arrays.asList(bookings));
+    }
+
+
+    @Override
+    public void bookPeriodic(
             PeriodicBookConflictPolicy conflictPolicy,
             List<PeriodicAppointmentBooking> bookings) throws Exception {
         BookModel.bookPeriodic(
                 this.getTableNameWithSchema(),
                 this.getPeriodicTableNameWithSchema(),
                 this,
+                this.getClock(),
+                bookings,
+                conflictPolicy);
+    }
+
+    @Override
+    public void bookPeriodic(
+            Connection connection,
+            PeriodicBookConflictPolicy conflictPolicy,
+            List<PeriodicAppointmentBooking> bookings) throws Exception {
+        BookModel.bookPeriodic(
+                this.getTableNameWithSchema(),
+                this.getPeriodicTableNameWithSchema(),
+                () -> new JdbcConnectionWrapper(() -> connection).recursiveConnectionWrapper(),
+                this.getClock(),
+                bookings,
+                conflictPolicy);
+    }
+
+    @Override
+    public void bookPeriodic(
+            Session session,
+            PeriodicBookConflictPolicy conflictPolicy,
+            List<PeriodicAppointmentBooking> bookings) throws Exception {
+        BookModel.bookPeriodic(
+                this.getTableNameWithSchema(),
+                this.getPeriodicTableNameWithSchema(),
+                () -> new HibernateConnectionWrapper(() -> session).recursiveConnectionWrapper(),
                 this.getClock(),
                 bookings,
                 conflictPolicy);

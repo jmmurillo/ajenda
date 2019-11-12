@@ -36,7 +36,6 @@ public class JdbcConnectionWrapper implements ConnectionWrapper {
 
     @Override
     public void close() throws Exception {
-        synchronized (this) {
             try {
                 if (!committed && connection != null) {
                     this.connection.rollback();
@@ -46,7 +45,5 @@ public class JdbcConnectionWrapper implements ConnectionWrapper {
                 this.connectionFactory = null;
                 this.connection = null;
             }
-
-        }
     }
 }

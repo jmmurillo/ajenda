@@ -2,12 +2,13 @@ package org.murillo.ajenda.core;
 
 import org.hibernate.Session;
 import org.hibernate.Transaction;
+import org.hibernate.resource.transaction.spi.TransactionStatus;
 
 import java.sql.SQLException;
 
 public class HibernateConnectionWrapper implements ConnectionWrapper {
 
-    HibernateSessionFactory sessionFactory;
+    private HibernateSessionFactory sessionFactory;
     private Session session;
     private Transaction transaction;
     private boolean committed = false;
@@ -20,8 +21,11 @@ public class HibernateConnectionWrapper implements ConnectionWrapper {
     public synchronized <R> R doWork(JdbcWork<R> jdbcWork) throws Exception {
         synchronized (this) {
             if (transaction == null) {
-                session = sessionFactory.getSession();
-                transaction = session.beginTransaction();
+                this.session = sessionFactory.getSession();
+                this.transaction = session.getTransaction();
+                if (transaction.getStatus() == null || transaction.getStatus().isOneOf(TransactionStatus.NOT_ACTIVE)) {
+                    this.transaction = session.beginTransaction();
+                }
             }
         }
         return session.doReturningWork(jdbcWork::execute);
@@ -37,7 +41,6 @@ public class HibernateConnectionWrapper implements ConnectionWrapper {
 
     @Override
     public void close() throws Exception {
-        synchronized (this) {
             try {
                 if (!committed && transaction != null) {
                     this.transaction.rollback();
@@ -49,6 +52,5 @@ public class HibernateConnectionWrapper implements ConnectionWrapper {
                 this.transaction = null;
             }
 
-        }
     }
 }
