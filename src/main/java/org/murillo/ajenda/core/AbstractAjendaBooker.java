@@ -4,11 +4,14 @@ import org.hibernate.Session;
 import org.murillo.ajenda.dto.AppointmentBooking;
 import org.murillo.ajenda.dto.Clock;
 import org.murillo.ajenda.dto.PeriodicAppointmentBooking;
+import org.murillo.ajenda.utils.UUIDType5;
 
 import java.sql.Connection;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static org.murillo.ajenda.core.Common.getPeriodicTableNameForTopic;
 
@@ -199,6 +202,16 @@ public abstract class AbstractAjendaBooker implements AjendaBooker {
     }
 
     @Override
+    public void cancel(Connection connection, UUID... uuids) throws Exception {
+        cancel(connection, Arrays.asList(uuids));
+    }
+
+    @Override
+    public void cancel(Session session, UUID... uuids) throws Exception {
+        cancel(session, Arrays.asList(uuids));
+    }
+
+    @Override
     public void cancel(List<UUID> uuids) throws Exception {
         BookModel.cancel(
                 this.getTableNameWithSchema(),
@@ -207,8 +220,34 @@ public abstract class AbstractAjendaBooker implements AjendaBooker {
     }
 
     @Override
+    public void cancel(Connection connection, List<UUID> uuids) throws Exception {
+        BookModel.cancel(
+                this.getTableNameWithSchema(),
+                () -> new JdbcConnectionWrapper(() -> connection).recursiveConnectionWrapper(),
+                uuids);
+    }
+
+    @Override
+    public void cancel(Session session, List<UUID> uuids) throws Exception {
+        BookModel.cancel(
+                this.getTableNameWithSchema(),
+                () -> new HibernateConnectionWrapper(() -> session).recursiveConnectionWrapper(),
+                uuids);
+    }
+
+    @Override
     public void cancelPeriodic(UUID... periodic_uuids) throws Exception {
         cancelPeriodic(Arrays.asList(periodic_uuids));
+    }    
+    
+    @Override
+    public void cancelPeriodic(Connection connection, UUID... periodic_uuids) throws Exception {
+        cancelPeriodic(connection, Arrays.asList(periodic_uuids));
+    }    
+    
+    @Override
+    public void cancelPeriodic(Session session, UUID... periodic_uuids) throws Exception {
+        cancelPeriodic(session, Arrays.asList(periodic_uuids));
     }
 
     @Override
@@ -218,6 +257,105 @@ public abstract class AbstractAjendaBooker implements AjendaBooker {
                 this.getPeriodicTableNameWithSchema(),
                 this,
                 periodic_uuids);
+    }   
+    
+    @Override
+    public void cancelPeriodic(Connection connection, List<UUID> periodic_uuids) throws Exception {
+        BookModel.cancelPeriodic(
+                this.getTableNameWithSchema(),
+                this.getPeriodicTableNameWithSchema(),
+                () -> new JdbcConnectionWrapper(() -> connection).recursiveConnectionWrapper(),
+                periodic_uuids);
+    }
+    
+    @Override
+    public void cancelPeriodic(Session session, List<UUID> periodic_uuids) throws Exception {
+        BookModel.cancelPeriodic(
+                this.getTableNameWithSchema(),
+                this.getPeriodicTableNameWithSchema(),
+                () -> new HibernateConnectionWrapper(() -> session).recursiveConnectionWrapper(),
+                periodic_uuids);
+    }    
+    
+    @Override
+    public void cancelKeys(String... keys) throws Exception {
+        cancelKeys(Arrays.asList(keys));
+    }
+
+    @Override
+    public void cancelKeys(Connection connection, String... keys) throws Exception {
+        cancelKeys(connection, Arrays.asList(keys));
+    }
+
+    @Override
+    public void cancelKeys(Session session, String... keys) throws Exception {
+        cancelKeys(session, Arrays.asList(keys));
+    }
+
+    @Override
+    public void cancelKeys(List<String> keys) throws Exception {
+        BookModel.cancel(
+                this.getTableNameWithSchema(),
+                this,
+                keys.stream().map(UUIDType5::nameUUIDFromCustomString).collect(Collectors.toList()));
+    }
+
+    @Override
+    public void cancelKeys(Connection connection, List<String> keys) throws Exception {
+        BookModel.cancel(
+                this.getTableNameWithSchema(),
+                () -> new JdbcConnectionWrapper(() -> connection).recursiveConnectionWrapper(),
+                keys.stream().map(UUIDType5::nameUUIDFromCustomString).collect(Collectors.toList()));
+    }
+
+    @Override
+    public void cancelKeys(Session session, List<String> keys) throws Exception {
+        BookModel.cancel(
+                this.getTableNameWithSchema(),
+                () -> new HibernateConnectionWrapper(() -> session).recursiveConnectionWrapper(),
+                keys.stream().map(UUIDType5::nameUUIDFromCustomString).collect(Collectors.toList()));
+    }
+
+    @Override
+    public void cancelPeriodicKeys(String... periodic_keys) throws Exception {
+        cancelPeriodicKeys(Arrays.asList(periodic_keys));
+    }    
+    
+    @Override
+    public void cancelPeriodicKeys(Connection connection, String... periodic_keys) throws Exception {
+        cancelPeriodicKeys(connection, Arrays.asList(periodic_keys));
+    }    
+    
+    @Override
+    public void cancelPeriodicKeys(Session session, String... periodic_keys) throws Exception {
+        cancelPeriodicKeys(session, Arrays.asList(periodic_keys));
+    }
+
+    @Override
+    public void cancelPeriodicKeys(List<String> periodic_keys) throws Exception {
+        BookModel.cancelPeriodic(
+                this.getTableNameWithSchema(),
+                this.getPeriodicTableNameWithSchema(),
+                this,
+                periodic_keys.stream().map(UUIDType5::nameUUIDFromCustomString).collect(Collectors.toList()));
+    }   
+    
+    @Override
+    public void cancelPeriodicKeys(Connection connection, List<String> periodic_keys) throws Exception {
+        BookModel.cancelPeriodic(
+                this.getTableNameWithSchema(),
+                this.getPeriodicTableNameWithSchema(),
+                () -> new JdbcConnectionWrapper(() -> connection).recursiveConnectionWrapper(),
+                periodic_keys.stream().map(UUIDType5::nameUUIDFromCustomString).collect(Collectors.toList()));
+    }
+    
+    @Override
+    public void cancelPeriodicKeys(Session session, List<String> periodic_keys) throws Exception {
+        BookModel.cancelPeriodic(
+                this.getTableNameWithSchema(),
+                this.getPeriodicTableNameWithSchema(),
+                () -> new HibernateConnectionWrapper(() -> session).recursiveConnectionWrapper(),
+                periodic_keys.stream().map(UUIDType5::nameUUIDFromCustomString).collect(Collectors.toList()));
     }
 
 

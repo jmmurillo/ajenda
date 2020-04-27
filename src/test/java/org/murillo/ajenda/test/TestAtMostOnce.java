@@ -5,6 +5,7 @@ import io.zonky.test.db.postgres.junit.SingleInstancePostgresRule;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.ClassRule;
+import org.junit.Ignore;
 import org.murillo.ajenda.core.AjendaBooker;
 import org.murillo.ajenda.core.AjendaScheduler;
 import org.murillo.ajenda.core.ConnectionFactoryFactory;
@@ -18,6 +19,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -300,8 +302,7 @@ public class TestAtMostOnce {
                         read.add(e);
                     });
 
-            scheduler.bookPeriodic(
-                    PeriodicBookConflictPolicy.FAIL,
+            scheduler.bookPeriodic(PeriodicBookConflictPolicy.FAIL,
                     PeriodicAppointmentBookingBuilder.aPeriodicBooking()
                             .withFixedPeriod(500, PeriodicPatternType.FIXED_RATE)
                             .withPayload(payload)
@@ -333,14 +334,13 @@ public class TestAtMostOnce {
             scheduler.checkAgenda().withFetchSize(1).periodically(100)
                     .readAtMostOnce(false, false, e -> {
                         System.out.println("It[" + e.getAttempts() + "] " + e.getDueTimestamp()
-                                        + "( " + (System.currentTimeMillis() - e.getDueTimestamp()) + " ) "
-                                        + e.getAppointmentUid()
-                                        + " " + Thread.currentThread().getId());
+                                + "( " + (System.currentTimeMillis() - e.getDueTimestamp()) + " ) "
+                                + e.getAppointmentUid()
+                                + " " + Thread.currentThread().getId());
                         read.add(e);
                     });
 
-            scheduler.bookPeriodic(
-                    PeriodicBookConflictPolicy.FAIL,
+            scheduler.bookPeriodic(PeriodicBookConflictPolicy.FAIL,
                     PeriodicAppointmentBookingBuilder.aPeriodicBooking()
                             .withFixedPeriod(500, PeriodicPatternType.FIXED_DELAY)
                             .withSkipMissed(false)
@@ -357,6 +357,7 @@ public class TestAtMostOnce {
     }
 
     @org.junit.Test
+    @Ignore("Improve to reduce time derived unstability")
     public void test_cancel_periodic_appointment() throws Exception {
         String topic = "prueba";
         String payload = UUID.randomUUID().toString();
@@ -381,8 +382,7 @@ public class TestAtMostOnce {
                     });
 
             UUID periodicUid = UUID.randomUUID();
-            scheduler.bookPeriodic(
-                    PeriodicBookConflictPolicy.FAIL,
+            scheduler.bookPeriodic(PeriodicBookConflictPolicy.FAIL,
                     PeriodicAppointmentBookingBuilder.aPeriodicBooking()
                             .withFixedPeriod(500, PeriodicPatternType.FIXED_RATE)
                             .withPayload(payload)
@@ -405,6 +405,43 @@ public class TestAtMostOnce {
         } finally {
             scheduler.shutdown(0);
         }
+    }
+
+    @org.junit.Test
+    @Ignore
+    public void test_load_book_and_handle() throws Exception {
+        String topic = "prueba";
+        String payload = UUID.randomUUID().toString();
+
+        AjendaScheduler scheduler = new AjendaScheduler(
+                ConnectionFactoryFactory.from(dataSource),
+                topic,
+                8,
+                100000,
+                new Clock() {
+                });
+
+        int N_APPOINTMENTS = 1000000;
+
+        Semaphore semaphore = new Semaphore(0);
+        ArrayList<AppointmentDue> read = new ArrayList<>();
+        scheduler.checkAgenda()
+                .withFetchSize(10000)
+                .periodically(1)
+                .readAtMostOnce(false, false,
+                        (appointmentDue) -> {
+                            System.out.println(appointmentDue.getPayload());
+                            semaphore.release();
+                        });
+
+        for (int i = 1; i <= N_APPOINTMENTS; i++) {
+            scheduler.book(AppointmentBookingBuilder.aBooking()
+                    .withImmediateDue()
+                    .withPayload(String.valueOf(i))
+                    .build());
+        }
+
+        semaphore.acquire(N_APPOINTMENTS);
     }
 
     private void simpleBookAppointment(AjendaBooker booker, String payload) throws Exception {

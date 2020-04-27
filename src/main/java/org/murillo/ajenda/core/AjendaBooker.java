@@ -67,9 +67,49 @@ public interface AjendaBooker extends ConnectionFactory {
 
     void cancel(UUID... uuids) throws Exception;
 
+    void cancel(Connection connection, UUID... uuids) throws Exception;
+
+    void cancel(Session session, UUID... uuids) throws Exception;
+
     void cancel(List<UUID> uuids) throws Exception;
+
+    void cancel(Connection connection, List<UUID> uuids) throws Exception;
+
+    void cancel(Session session, List<UUID> uuids) throws Exception;
 
     void cancelPeriodic(UUID... periodic_uuids) throws Exception;
 
+    void cancelPeriodic(Connection connection, UUID... periodic_uuids) throws Exception;
+
+    void cancelPeriodic(Session session, UUID... periodic_uuids) throws Exception;
+
     void cancelPeriodic(List<UUID> periodic_uuids) throws Exception;
+
+    void cancelPeriodic(Connection connection, List<UUID> periodic_uuids) throws Exception;
+
+    void cancelPeriodic(Session session, List<UUID> periodic_uuids) throws Exception;
+
+    void cancelKeys(String... keys) throws Exception;
+
+    void cancelKeys(Connection connection, String... keys) throws Exception;
+
+    void cancelKeys(Session session, String... keys) throws Exception;
+
+    void cancelKeys(List<String> keys) throws Exception;
+
+    void cancelKeys(Connection connection, List<String> keys) throws Exception;
+
+    void cancelKeys(Session session, List<String> keys) throws Exception;
+
+    void cancelPeriodicKeys(String... periodic_keys) throws Exception;
+
+    void cancelPeriodicKeys(Connection connection, String... periodic_keys) throws Exception;
+
+    void cancelPeriodicKeys(Session session, String... periodic_keys) throws Exception;
+
+    void cancelPeriodicKeys(List<String> periodic_keys) throws Exception;
+
+    void cancelPeriodicKeys(Connection connection, List<String> periodic_keys) throws Exception;
+
+    void cancelPeriodicKeys(Session session, List<String> periodic_keys) throws Exception;
 }

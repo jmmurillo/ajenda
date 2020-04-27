@@ -5,6 +5,7 @@ import io.zonky.test.db.postgres.junit.SingleInstancePostgresRule;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.ClassRule;
+import org.junit.Ignore;
 import org.murillo.ajenda.core.AjendaBooker;
 import org.murillo.ajenda.core.AjendaScheduler;
 import org.murillo.ajenda.core.ConnectionFactoryFactory;
@@ -18,10 +19,12 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-
+/*
+ */
 public class TestAtLeastOnce {
 
     @ClassRule
@@ -311,8 +314,7 @@ public class TestAtLeastOnce {
                         read.add(e);
                     });
 
-            scheduler.bookPeriodic(
-                    PeriodicBookConflictPolicy.FAIL,
+            scheduler.bookPeriodic(PeriodicBookConflictPolicy.FAIL,
                     PeriodicAppointmentBookingBuilder.aPeriodicBooking()
                             .withFixedPeriod(500, PeriodicPatternType.FIXED_RATE)
                             .withSkipMissed(false)
@@ -347,8 +349,7 @@ public class TestAtLeastOnce {
                     });
 
             UUID periodicUid = UUID.randomUUID();
-            scheduler.bookPeriodic(
-                    PeriodicBookConflictPolicy.FAIL,
+            scheduler.bookPeriodic(PeriodicBookConflictPolicy.FAIL,
                     PeriodicAppointmentBookingBuilder.aPeriodicBooking()
                             .withFixedPeriod(500, PeriodicPatternType.FIXED_RATE)
                             .withSkipMissed(false)
@@ -370,6 +371,43 @@ public class TestAtLeastOnce {
             scheduler.shutdown(0);
         }
 
+    }
+
+    @org.junit.Test
+    @Ignore
+    public void test_load_book_and_handle() throws Exception {
+        String topic = "prueba";
+        String payload = UUID.randomUUID().toString();
+
+        AjendaScheduler scheduler = new AjendaScheduler(
+                ConnectionFactoryFactory.from(dataSource),
+                topic,
+                8,
+                100000,
+                new Clock() {
+                });
+
+        int N_APPOINTMENTS = 1000000;
+
+        Semaphore semaphore = new Semaphore(0);
+        ArrayList<AppointmentDue> read = new ArrayList<>();
+        scheduler.checkAgenda()
+                .withFetchSize(10000)
+                .periodically(1)
+                .readAtLeastOnce(100000,
+                        (appointmentDue, cancelFlag) -> {
+                            System.out.println(appointmentDue.getPayload());
+                            semaphore.release();
+                        });
+
+        for (int i = 1; i <= N_APPOINTMENTS; i++) {
+            scheduler.book(AppointmentBookingBuilder.aBooking()
+                    .withImmediateDue()
+                    .withPayload(String.valueOf(i))
+                    .build());
+        }
+
+        semaphore.acquire(N_APPOINTMENTS);
     }
 
     private void simpleBookAppointment(AjendaBooker booker, String payload) throws Exception {

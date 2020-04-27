@@ -225,7 +225,7 @@ public class AjendaScheduler extends AbstractAjendaBooker {
 
     public boolean checkConnection() {
         try (ConnectionWrapper connection = this.getConnection()) {
-             return connection.doWork(
+            return connection.doWork(
                     c -> c.isValid(CONNECTION_VALIDATION_TIMEOUT_SEC)
             );
         } catch (Exception e) {
@@ -237,7 +237,7 @@ public class AjendaScheduler extends AbstractAjendaBooker {
     public boolean checkPoller() {
         if (poller.isShutdown()) return false;
         if (pollerScheduledFuture == null) return true;
-        if (poller.getTaskCount() > 0) return false;
+        if (poller.getQueue().size() + poller.getActiveCount() <= 0) return false;
         return !this.pollerScheduledFuture.isCancelled() && !this.pollerScheduledFuture.isDone();
     }
 
