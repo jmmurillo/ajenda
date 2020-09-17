@@ -635,7 +635,7 @@ class BookModel<T extends Connection> {
             }
 
             if (booking.isSkipMissed()) {
-                long due = getCronNextDueTimestamp(booking, cronType, nowEpochMs);
+                long due = getCronNextDueTimestamp(booking, cronType, Math.max(nowEpochMs, previousDueDate));
                 timestamps.add(due);
                 long nextDue = due;
                 while (//nextDue < nowEpochMs + size * lookAhead &&
