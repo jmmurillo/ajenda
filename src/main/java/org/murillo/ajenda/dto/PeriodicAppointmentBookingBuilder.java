@@ -40,8 +40,8 @@ public final class PeriodicAppointmentBookingBuilder {
     public PeriodicAppointmentBookingBuilder withHashUid(String key) {
         this.appointmentUid = UUIDType5.nameUUIDFromCustomString(key);
         return this;
-    }    
-    
+    }
+
     public PeriodicAppointmentBookingBuilder withHashUid() {
         this.appointmentUid = null;
         return this;
@@ -64,11 +64,11 @@ public final class PeriodicAppointmentBookingBuilder {
         return this;
     }
 
-    public PeriodicAppointmentBookingBuilder withStartOnPeriodMultiple(){
+    public PeriodicAppointmentBookingBuilder withStartOnPeriodMultiple() {
         return withStartOnPeriodMultiple(0);
     }
 
-    public PeriodicAppointmentBookingBuilder withStartOnPeriodMultiple(int offset){
+    public PeriodicAppointmentBookingBuilder withStartOnPeriodMultiple(int offset) {
         this.startOnMultiple = true;
         this.startOnMultipleOffset = offset;
         return this;
@@ -116,8 +116,8 @@ public final class PeriodicAppointmentBookingBuilder {
         return this;
     }
 
-    public PeriodicAppointmentBookingBuilder withTtl(int ttl){
-        if(ttl <= 0) this.ttl = 0;
+    public PeriodicAppointmentBookingBuilder withTtl(int ttl) {
+        if (ttl <= 0) this.ttl = 0;
         else this.ttl = ttl;
         return this;
     }
@@ -134,7 +134,8 @@ public final class PeriodicAppointmentBookingBuilder {
 
     public PeriodicAppointmentBookingBuilder withKeyIteration(int keyIteration) {
         if (keyIteration > MAX_KEY_ITERATION
-        || keyIteration < 1) throw new IllegalArgumentException("keyIteration must be a positive integer lower than " + MAX_KEY_ITERATION);
+                || keyIteration < 1)
+            throw new IllegalArgumentException("keyIteration must be a positive integer lower than " + MAX_KEY_ITERATION);
         this.keyIteration = keyIteration;
         return this;
     }

@@ -41,16 +41,16 @@ public class HibernateConnectionWrapper implements ConnectionWrapper {
 
     @Override
     public void close() throws Exception {
-            try {
-                if (!committed && transaction != null) {
-                    this.transaction.rollback();
-                }
-            } finally {
-                this.session.close();
-                this.sessionFactory = null;
-                this.session = null;
-                this.transaction = null;
+        try {
+            if (!committed && transaction != null) {
+                this.transaction.rollback();
             }
+        } finally {
+            this.session.close();
+            this.sessionFactory = null;
+            this.session = null;
+            this.transaction = null;
+        }
 
     }
 }

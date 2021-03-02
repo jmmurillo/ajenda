@@ -2,7 +2,6 @@ package org.murillo.ajenda.test.utils;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import org.murillo.ajenda.core.ConnectionFactory;
 import org.murillo.ajenda.core.JdbcConnectionFactory;
 
 import javax.sql.DataSource;
@@ -10,7 +9,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 
 public class TestDataSource implements JdbcConnectionFactory {
-    
+
     private HikariConfig config;
     private HikariDataSource ds;
 
@@ -44,5 +43,4 @@ public class TestDataSource implements JdbcConnectionFactory {
     public Connection getConnection() throws SQLException {
         return ds.getConnection();
     }
-
 }

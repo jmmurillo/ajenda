@@ -36,14 +36,14 @@ public class JdbcConnectionWrapper implements ConnectionWrapper {
 
     @Override
     public void close() throws Exception {
-            try {
-                if (!committed && connection != null) {
-                    this.connection.rollback();
-                }
-            } finally {
-                this.connection.close();
-                this.connectionFactory = null;
-                this.connection = null;
+        try {
+            if (!committed && connection != null) {
+                this.connection.rollback();
             }
+        } finally {
+            this.connection.close();
+            this.connectionFactory = null;
+            this.connection = null;
+        }
     }
 }

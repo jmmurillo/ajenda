@@ -4,5 +4,5 @@ package org.murillo.ajenda.core;
 public interface ConnectionFactory {
 
     ConnectionWrapper getConnection() throws Exception;
-    
+
 }

@@ -62,6 +62,7 @@ public class Common {
         String payload = null;
         UUID periodicAppointmentUid = null;
         int flags = 0;
+        short version = 0;
         HashMap<String, Object> extraParams = new HashMap<>();
 
         for (int i = 1; i <= metaData.getColumnCount(); i++) {
@@ -96,6 +97,9 @@ public class Common {
                 case "flags":
                     flags = rs.getInt(i);
                     break;
+                case "version":
+                    version = rs.getShort(i);
+                    break;
                 default:
                     extraParams.put(metaData.getColumnName(i), rs.getObject(i));
                     break;
@@ -110,7 +114,8 @@ public class Common {
                 attempts,
                 extraParams.isEmpty() ? null : extraParams,
                 periodicAppointmentUid,
-                flags
+                flags,
+                version
         );
     }
 

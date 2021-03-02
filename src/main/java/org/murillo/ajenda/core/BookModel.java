@@ -20,17 +20,17 @@ import static org.murillo.ajenda.core.Common.extractPeriodicAppointment;
 class BookModel<T extends Connection> {
 
     private static final String BOOK_INSERT_QUERY =
-            "INSERT INTO %s "
-                    + "(uuid, creation_date, due_date, timeout_date, ttl, attempts, payload, periodic_uuid, flags%s) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?%s) "
+            "INSERT INTO %s AS book "
+                    + "(uuid, creation_date, due_date, timeout_date, ttl, attempts, payload, periodic_uuid, flags, version%s) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0%s) "
                     + "ON CONFLICT (uuid) DO UPDATE SET "
-                    + "(uuid, creation_date, due_date, timeout_date, ttl, attempts, payload, periodic_uuid, flags%s) "
-                    + "= (?, ?, ?, ?, ?, ?, ?, ?, ?%s) ";
+                    + "(uuid, creation_date, due_date, timeout_date, ttl, attempts, payload, periodic_uuid, flags, version%s) "
+                    + "= (?, ?, ?, ?, ?, ?, ?, ?, ?, (CASE WHEN book.version = 32767 THEN -32768 ELSE book.version +1 END)%s) ";
 
     private static final String BOOK_INSERT_DONT_UPDATE_QUERY =
-            "INSERT INTO %s "
-                    + "(uuid, creation_date, due_date, timeout_date, ttl, attempts, payload, periodic_uuid, flags%s) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?%s) "
+            "INSERT INTO %s AS book "
+                    + "(uuid, creation_date, due_date, timeout_date, ttl, attempts, payload, periodic_uuid, flags, version%s) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0%s) "
                     + "ON CONFLICT (uuid) DO NOTHING ";
 
     private static final String PERIODIC_BOOK_INSERT_QUERY =
@@ -57,26 +57,30 @@ class BookModel<T extends Connection> {
             "DELETE "
                     + "FROM %s "
                     + "WHERE uuid IN (%s) "
-                    + "AND periodic_uuid IS NULL";
+                    + "AND periodic_uuid IS NULL "
+                    + "RETURNING uuid, periodic_uuid, due_date, timeout_date";
 
     private static final String CANCEL_PERIODIC_BOOKINGS_FROM_MAIN_QUERY =
             "DELETE "
                     + "FROM %s "
-                    + "WHERE periodic_uuid IN (%s)";
+                    + "WHERE periodic_uuid IN (%s) "
+                    + "RETURNING uuid, periodic_uuid, due_date, timeout_date";
 
     private static final String CANCEL_PERIODIC_BOOKINGS_FROM_PERIODIC_QUERY =
             "DELETE "
                     + "FROM %s "
                     + "WHERE uuid IN (%s)";
 
-    static void cancel(
+    static Map<UUID, CancelledResult> cancel(
             String tableName,
             ConnectionFactory connectionFactory,
             List<UUID> uuids
     ) throws Exception {
 
+        Map<UUID, CancelledResult> result = new HashMap<>();
+
         while (uuids.remove(null)) ;
-        if (uuids.isEmpty()) return;
+        if (uuids.isEmpty()) return result;
 
         String cancelSql = String.format(
                 CANCEL_BOOKINGS_QUERY,
@@ -93,23 +97,38 @@ class BookModel<T extends Connection> {
                     for (int i = 0; i < uuids.size(); i++) {
                         stmt.setObject(place++, uuids.get(i));
                     }
-                    stmt.execute();
+                    try (ResultSet rs = stmt.executeQuery()) {
+                        while (rs.next()) {
+                            //RETURNING uuid, periodic_uuid, due_date, timeout_date
+                            UUID uuid = UUID.fromString(rs.getString(1));
+                            UUID periodicUuid = rs.getString(2) != null ? UUID.fromString(rs.getString(2)) : null;
+                            result.put(uuid, new CancelledResult(
+                                    uuid,
+                                    periodicUuid,
+                                    rs.getLong(3),
+                                    rs.getLong(4)
+                            ));
+                        }
+                    }
                 }
                 return null;
             });
             connw.commit();
+            return result;
         }
     }
 
-    static void cancelPeriodic(
+    static Map<UUID, CancelledResult> cancelPeriodic(
             String tableName,
             String periodicTableName,
             ConnectionFactory connectionFactory,
             List<UUID> periodic_uuids
     ) throws Exception {
 
+        Map<UUID, CancelledResult> result = new HashMap<>();
+
         while (periodic_uuids.remove(null)) ;
-        if (periodic_uuids.isEmpty()) return;
+        if (periodic_uuids.isEmpty()) return result;
 
         String questionMarks = buildQuestionMarks(periodic_uuids.size());
         String cancelFromPeriodicSql = String.format(
@@ -140,11 +159,24 @@ class BookModel<T extends Connection> {
                     for (int i = 0; i < periodic_uuids.size(); i++) {
                         stmt.setObject(place++, periodic_uuids.get(i));
                     }
-                    stmt.execute();
+                    try (ResultSet rs = stmt.executeQuery()) {
+                        while (rs.next()) {
+                            //RETURNING uuid, due_date, timeout_date
+                            UUID uuid = UUID.fromString(rs.getString(1));
+                            UUID periodicUuid = UUID.fromString(rs.getString(2));
+                            result.put(periodicUuid, new CancelledResult(
+                                    uuid,
+                                    periodicUuid,
+                                    rs.getLong(3),
+                                    rs.getLong(4)
+                            ));
+                        }
+                    }
                 }
                 return null;
             });
             connw.commit();
+            return result;
         }
     }
 

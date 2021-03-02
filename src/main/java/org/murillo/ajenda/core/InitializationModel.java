@@ -15,7 +15,8 @@ public class InitializationModel {
                     + "attempts         INTEGER, "
                     + "payload          TEXT, "
                     + "periodic_uuid    UUID, "
-                    + "flags            INTEGER "
+                    + "flags            INTEGER, "
+                    + "version          SMALLINT DEFAULT 0 "
                     + ") WITH (fillfactor = 70) ";
 
     public static final String TABLE_FOR_PERIODIC_TOPIC_QUERY =
@@ -41,6 +42,10 @@ public class InitializationModel {
                     "WHERE  table_schema = ? " +
                     "AND    table_name = ? ";
 
+    public static final String ADD_COLUMN_IF_NOT_EXISTS =
+            "ALTER TABLE %s "
+                    + "ADD COLUMN IF NOT EXISTS %s %s ";
+
     public static void initTableForTopic(ConnectionFactory dataSource, String topic, String schemaName, String tableName, String periodicTableName) throws Exception {
 
         try (ConnectionWrapper connw = dataSource.getConnection()) {
@@ -56,9 +61,15 @@ public class InitializationModel {
                 String createIndexSql = String.format(
                         CREATE_DUE_DATE_INDEX_QUERY,
                         tableName, tableName);
+                String addVersionColumnSql = String.format(ADD_COLUMN_IF_NOT_EXISTS,
+                        tableName, "version", "SMALLINT DEFAULT 0");
                 try (Statement stmt = connection.createStatement()) {
 
                     stmt.execute(createTableSql);
+
+                    //Previous ajenda versions did not include this column, so add it to previously existing main table
+                    stmt.execute(addVersionColumnSql);
+
                     //Assert table exists and has expected columns
                     HashMap<String, String> columnsForTable = getColumnsForTable(connection, tableName, schemaName);
                     ensureColumnAndType(columnsForTable, tableName, "uuid", "UUID");
@@ -70,6 +81,7 @@ public class InitializationModel {
                     ensureColumnAndType(columnsForTable, tableName, "payload", "TEXT");
                     ensureColumnAndType(columnsForTable, tableName, "periodic_uuid", "UUID");
                     ensureColumnAndType(columnsForTable, tableName, "flags", "INTEGER");
+                    ensureColumnAndType(columnsForTable, tableName, "version", "SMALLINT");
 
                     stmt.execute(createPeriodicTableSql);
                     //Assert periodic table exists and has expected columns

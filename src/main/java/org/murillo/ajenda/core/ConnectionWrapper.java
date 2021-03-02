@@ -8,7 +8,7 @@ public interface ConnectionWrapper extends AutoCloseable {
 
     void commit() throws SQLException;
 
-    default ConnectionWrapper recursiveConnectionWrapper(){
+    default ConnectionWrapper recursiveConnectionWrapper() {
         return new ConnectionWrapper() {
             @Override
             public <R> R doWork(JdbcWork<R> jdbcWork) throws SQLException {

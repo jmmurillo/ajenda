@@ -319,6 +319,56 @@ public class TestAtMostOnce {
     }
 
     @org.junit.Test
+    @Ignore("Timing makes test unstable")
+    public void test_concurrent_periodic_appointment() throws Exception {
+        String topic = "prueba";
+        String payload = UUID.randomUUID().toString();
+
+        AjendaScheduler scheduler1 = new AjendaScheduler(
+                ConnectionFactoryFactory.from(dataSource),
+                topic,
+                new Clock() {
+                });
+
+        AjendaScheduler scheduler2 = new AjendaScheduler(
+                ConnectionFactoryFactory.from(dataSource),
+                topic,
+                new Clock() {
+                });
+        try {
+            long t = System.currentTimeMillis();
+            ArrayList<AppointmentDue> read = new ArrayList<>();
+            scheduler1.checkAgenda().withFetchSize(10).periodically(100)
+                    .readAtMostOnce(false, false, e -> {
+                        System.out.println((System.currentTimeMillis() - t) + ": @@@ scheduler1 It[" + e.getAttempts() + "]");
+                        read.add(e);
+                    });
+
+            scheduler2.checkAgenda().withFetchSize(10).periodically(100)
+                    .readAtMostOnce(false, false, e -> {
+                        System.out.println((System.currentTimeMillis() - t) + ": ### scheduler2 It[" + e.getAttempts() + "]");
+                        read.add(e);
+                    });
+
+            scheduler1.bookPeriodic(PeriodicBookConflictPolicy.FAIL,
+                    PeriodicAppointmentBookingBuilder.aPeriodicBooking()
+                            .withFixedPeriod(100, PeriodicPatternType.FIXED_RATE)
+                            .withPayload(payload)
+                            .withSkipMissed(true)
+                            .build());
+
+            Thread.sleep(1000);
+            scheduler1.shutdown(0);
+            scheduler2.shutdown(0);
+
+            Assert.assertEquals(10, read.size());
+        } finally {
+            scheduler1.shutdown(0);
+            scheduler2.shutdown(0);
+        }
+    }
+
+    @org.junit.Test
     public void test_periodic_appointment_fixed_delay() throws Exception {
         String topic = "prueba";
         String payload = UUID.randomUUID().toString();

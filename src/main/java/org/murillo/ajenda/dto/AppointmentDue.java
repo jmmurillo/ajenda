@@ -13,6 +13,7 @@ public class AppointmentDue {
     private HashMap<String, ?> extraParams;
     private UUID periodicAppointmentUid;
     private int flags;
+    private short version;
 
     public AppointmentDue(
             UUID appointmentUid,
@@ -22,8 +23,8 @@ public class AppointmentDue {
             int attempts,
             HashMap<String, ?> extraParams,
             UUID periodicAppointmentUid,
-            int flags
-    ) {
+            int flags,
+            short version) {
         this.appointmentUid = appointmentUid;
         this.dueTimestamp = dueTimestamp;
         this.ttl = ttl;
@@ -32,6 +33,7 @@ public class AppointmentDue {
         this.extraParams = extraParams;
         this.periodicAppointmentUid = periodicAppointmentUid;
         this.flags = flags;
+        this.version = version;
     }
 
     public UUID getAppointmentUid() {
@@ -66,6 +68,10 @@ public class AppointmentDue {
         return flags;
     }
 
+    public short getVersion() {
+        return version;
+    }
+
     void setAppointmentUid(UUID appointmentUid) {
         this.appointmentUid = appointmentUid;
     }
@@ -98,6 +104,10 @@ public class AppointmentDue {
         this.flags = flags;
     }
 
+    void setVersion(short version) {
+        this.version = version;
+    }
+
     @Override
     public String toString() {
         return "AppointmentDue{" +
@@ -108,6 +118,7 @@ public class AppointmentDue {
                 ", extraParams=" + extraParams +
                 ", periodicAppointmentUid=" + periodicAppointmentUid +
                 ", flags=" + flags +
+                ", version=" + version +
                 '}';
     }
 }

@@ -1,5 +1,6 @@
 package org.murillo.ajenda.core;
 
+import com.google.common.collect.MapMaker;
 import org.murillo.ajenda.dto.CancellableAppointmentListener;
 import org.murillo.ajenda.dto.Clock;
 import org.murillo.ajenda.dto.SimpleAppointmentListener;
@@ -7,6 +8,9 @@ import org.murillo.ajenda.dto.TransactionalAppointmentListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -30,6 +34,9 @@ public class AjendaScheduler extends AbstractAjendaBooker {
     private AtomicLong processedCount = new AtomicLong(0);
     private long beganToProcessCount = 0;
     private double meanLag = 0.0;
+
+    private Map<UUID, ScheduledFuture<?>> scheduledFutureCache;
+    private boolean mayInterruptOnCancel = true;
 
     public AjendaScheduler(ConnectionFactory dataSource, String topic, String customSchema) throws Exception {
         this(dataSource, topic, new SyncedClock(dataSource), customSchema);
@@ -96,6 +103,7 @@ public class AjendaScheduler extends AbstractAjendaBooker {
 
         InitializationModel.initTableForTopic(dataSource, topic, schemaName, tableName, periodicTableName);
         this.maxQueueSize = maxQueueSize;
+        this.scheduledFutureCache = new MapMaker().weakValues().makeMap();
         this.executor = new ScheduledThreadPoolExecutor(concurrencyLevel, new AjendaExecutorThreadFactory(topic), new ThreadPoolExecutor.DiscardPolicy());
         this.executor.setRemoveOnCancelPolicy(true);
         this.poller = new ScheduledThreadPoolExecutor(1, new AjendaPollerThreadFactory(topic), new ThreadPoolExecutor.DiscardPolicy());
@@ -103,6 +111,34 @@ public class AjendaScheduler extends AbstractAjendaBooker {
         this.startTime = clock.nowEpochMs();
 
         //TODO Ofrecer estadísticas de trabajos en proceso, en cola, etc.
+    }
+
+    public boolean isMayInterruptOnCancel() {
+        return mayInterruptOnCancel;
+    }
+
+    public void setMayInterruptOnCancel(boolean mayInterruptOnCancel) {
+        this.mayInterruptOnCancel = mayInterruptOnCancel;
+    }
+
+    public ScheduledFuture<?> schedule(UUID appointmentUid,
+                                       Runnable runnable,
+                                       long delay,
+                                       TimeUnit unit) {
+        ScheduledFuture<?> scheduledFuture = this.executor.schedule(runnable, delay, unit);
+        this.scheduledFutureCache.put(appointmentUid, scheduledFuture);
+        return scheduledFuture;
+    }
+
+    public Long tryCancelInQueue(UUID appointmentUUID, boolean mayInterrupt) {
+        ScheduledFuture<?> toCancel = this.scheduledFutureCache.get(appointmentUUID);
+        if (toCancel != null) {
+            long delayNs = toCancel.getDelay(TimeUnit.NANOSECONDS);
+            if (!(toCancel.isDone() || (delayNs <= 0 && !mayInterrupt) || !toCancel.cancel(mayInterrupt))) {
+                return TimeUnit.MILLISECONDS.convert(delayNs, TimeUnit.NANOSECONDS);
+            }
+        }
+        return null;
     }
 
     private static class AjendaPollerThreadFactory implements ThreadFactory {
@@ -184,6 +220,27 @@ public class AjendaScheduler extends AbstractAjendaBooker {
 
     public Clock getClock() {
         return clock;
+    }
+
+    @Override
+    protected void cancelInQueue(List<UUID> uuids, Map<UUID, CancelledResult> cancelledResultMap) {
+        uuids.stream().forEach(uuid -> {
+            long nowEpoch = this.clock.nowEpochMs();
+            Long delay = this.tryCancelInQueue(uuid, this.mayInterruptOnCancel);
+            if (delay != null) {
+                cancelledResultMap.putIfAbsent(uuid, new CancelledResult(uuid, null, nowEpoch + delay, -1));
+            }
+        });
+    }
+
+    @Override
+    protected void periodicCancelInQueue(List<UUID> periodicUuids, Map<UUID, CancelledResult> cancelledResultMap) {
+        //TODO There may be iterations in queue which won't be cancelled.
+        // Only iterations present in main table will be cancelled.
+        cancelledResultMap.forEach((key, value) -> {
+            UUID uuid = value.getUuid();
+            this.tryCancelInQueue(uuid, this.mayInterruptOnCancel);
+        });
     }
 
     public CheckAgenda checkAgenda() {
@@ -285,7 +342,6 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                     AjendaScheduler.this,
                     0,
                     limitSize,
-                    AjendaScheduler.this.clock.nowEpochMs(),
                     true,
                     reBookOnException,
                     true,
@@ -298,7 +354,6 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                     AjendaScheduler.this,
                     0,
                     limitSize,
-                    AjendaScheduler.this.clock.nowEpochMs(),
                     timeout,
                     true,
                     listener,
@@ -311,7 +366,6 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                     AjendaScheduler.this,
                     0,
                     limitSize,
-                    AjendaScheduler.this.clock.nowEpochMs(),
                     timeout,
                     true,
                     listener,
@@ -359,7 +413,6 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                                         AjendaScheduler.this,
                                         minimumPeriod + nextSleep,
                                         limitSize,
-                                        AjendaScheduler.this.clock.nowEpochMs(),
                                         onlyLate,
                                         reBookOnException,
                                         false,
@@ -378,12 +431,11 @@ public class AjendaScheduler extends AbstractAjendaBooker {
             } else {
                 AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleAtFixedRate(() -> {
                             try {
-                                LOGGER.debug("About to poll topic {}", AjendaScheduler.this.getTopic());
+                                //LOGGER.debug("About to poll topic {}", AjendaScheduler.this.getTopic());
                                 AtMostOnceModel.process(
                                         AjendaScheduler.this,
                                         pollPeriodMs,
                                         limitSize,
-                                        AjendaScheduler.this.clock.nowEpochMs(),
                                         onlyLate,
                                         reBookOnException,
                                         false,
@@ -421,7 +473,6 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                                         AjendaScheduler.this,
                                         minimumPeriod + nextSleep,
                                         limitSize,
-                                        AjendaScheduler.this.clock.nowEpochMs(),
                                         timeout,
                                         false,
                                         listener,
@@ -444,7 +495,6 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                                         AjendaScheduler.this,
                                         pollPeriodMs,
                                         limitSize,
-                                        AjendaScheduler.this.clock.nowEpochMs(),
                                         timeout,
                                         false,
                                         listener,
@@ -482,7 +532,6 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                                         AjendaScheduler.this,
                                         minimumPeriod + nextSleep,
                                         limitSize,
-                                        AjendaScheduler.this.clock.nowEpochMs(),
                                         timeout,
                                         false,
                                         listener,
@@ -504,7 +553,6 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                                         AjendaScheduler.this,
                                         pollPeriodMs,
                                         limitSize,
-                                        AjendaScheduler.this.clock.nowEpochMs(),
                                         timeout,
                                         false,
                                         listener,

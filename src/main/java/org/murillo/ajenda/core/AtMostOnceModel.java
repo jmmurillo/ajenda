@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.murillo.ajenda.core.Common.extractAppointmentDue;
 
-class AtMostOnceModel {
+public class AtMostOnceModel {
 
     //AT_MOST_ONCE_QUERY (DELETE)
     //COMMIT
@@ -33,17 +33,15 @@ class AtMostOnceModel {
                     + "  FROM %s "
                     + "  WHERE due_date <= ? "
                     + "    AND timeout_date <= ? "
-                    + "    AND %s "  //CUSTOM CONDITION
                     + "  ORDER BY due_date, timeout_date ASC "
                     + "  FETCH FIRST (?) ROWS ONLY "
                     + "  FOR UPDATE SKIP LOCKED "
                     + ")) RETURNING *";
 
-    public static void process(
+    static void process(
             AjendaScheduler ajendaScheduler,
             long lookAhead,
             int limitSize,
-            long nowEpoch,
             boolean onlyLate,
             boolean reBookOnException,
             boolean blocking,
@@ -53,6 +51,7 @@ class AtMostOnceModel {
         synchronized (ajendaScheduler.getExecutor()) {
             int minSize = Math.min(limitSize, ajendaScheduler.remainingSlots());
             if (minSize <= 0) return;
+            long nowEpoch = ajendaScheduler.getClock().nowEpochMs();
             scheduleNoAck(
                     ajendaScheduler,
                     lookAhead,
@@ -83,34 +82,35 @@ class AtMostOnceModel {
             for (AppointmentDue appointmentDue : appointments) {
                 long delay = appointmentDue.getDueTimestamp() - nowEpoch;
                 try {
-                    ajendaScheduler.getExecutor()
-                            .schedule(() -> {
-                                        try {
-                                            if (isNotExpired(ajendaScheduler, appointmentDue)
-                                                    && isNotMissed(lookAhead, onlyLate, appointmentDue, delay)) {
-                                                ajendaScheduler.addBeganToProcess(appointmentDue.getDueTimestamp());
-                                                listener.receive(appointmentDue);
-                                                ajendaScheduler.addProcessed(1);
-                                            }
-                                        } catch (UnhandledAppointmentException ex) {
-                                            if (reBookOnException) {
-                                                reBook(ajendaScheduler, appointmentDue);
-                                            }
-                                            //TODO log
-                                            return;
-                                        } catch (Throwable th) {
-                                            th.printStackTrace();
-                                            if (reBookOnException) {
-                                                reBook(ajendaScheduler, appointmentDue);
-                                            }
-                                            //TODO log
-                                            return;
-                                        } finally {
-                                            if (blocking) semaphore.release();
-                                        }
-                                    },
-                                    delay > 0 ? delay : 0,
-                                    TimeUnit.MILLISECONDS);
+                    ajendaScheduler.schedule(
+                            appointmentDue.getAppointmentUid(),
+                            () -> {
+                                try {
+                                    if (isNotExpired(ajendaScheduler, appointmentDue)
+                                            && isNotMissed(lookAhead, onlyLate, appointmentDue, delay)) {
+                                        ajendaScheduler.addBeganToProcess(appointmentDue.getDueTimestamp());
+                                        listener.receive(appointmentDue);
+                                        ajendaScheduler.addProcessed(1);
+                                    }
+                                } catch (UnhandledAppointmentException ex) {
+                                    if (reBookOnException) {
+                                        reBook(ajendaScheduler, appointmentDue);
+                                    }
+                                    //TODO log
+                                    return;
+                                } catch (Throwable th) {
+                                    th.printStackTrace();
+                                    if (reBookOnException) {
+                                        reBook(ajendaScheduler, appointmentDue);
+                                    }
+                                    //TODO log
+                                    return;
+                                } finally {
+                                    if (blocking) semaphore.release();
+                                }
+                            },
+                            delay > 0 ? delay : 0,
+                            TimeUnit.MILLISECONDS);
                     scheduled++;
                 } catch (RejectedExecutionException ex) {
                     //TODO log

@@ -11,7 +11,8 @@ public class AppointmentBooking {
     private String payload;
     private HashMap<String, Object> extraParams;
 
-    AppointmentBooking(){}
+    AppointmentBooking() {
+    }
 
     public UUID getAppointmentUid() {
         return appointmentUid;

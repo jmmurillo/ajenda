@@ -36,7 +36,7 @@ public class SyncedClock implements Clock {
                 TimeUnit.MINUTES);
     }
 
-    public boolean shutdown(long gracePeriodMs){
+    public boolean shutdown(long gracePeriodMs) {
         this.scheduledFuture.cancel(true);
         return Common.shutdown(this.executor, gracePeriodMs);
     }
@@ -58,7 +58,7 @@ public class SyncedClock implements Clock {
                     .mapToLong(a -> a[0]).limit(2)
                     .average()
                     .orElse(0.0);
-        }catch (Exception ex){
+        } catch (Exception ex) {
             //TODO
         }
     }
@@ -82,7 +82,7 @@ public class SyncedClock implements Clock {
         });
     }
 
-    public long nowEpochMs(){
+    public long nowEpochMs() {
         return System.currentTimeMillis() + this.offset;
     }
 

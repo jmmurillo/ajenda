@@ -6,5 +6,5 @@ import org.hibernate.Session;
 public interface HibernateSessionFactory {
 
     Session getSession() throws Exception;
-    
+
 }
