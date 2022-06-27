@@ -10,7 +10,7 @@ public class AppointmentDue {
     private int ttl;
     private String payload;
     private int attempts;
-    private HashMap<String, ?> extraParams;
+    private HashMap<String, Object> extraParams;
     private UUID periodicAppointmentUid;
     private int flags;
     private short version;
@@ -21,7 +21,7 @@ public class AppointmentDue {
             int ttl,
             String payload,
             int attempts,
-            HashMap<String, ?> extraParams,
+            HashMap<String, Object> extraParams,
             UUID periodicAppointmentUid,
             int flags,
             short version) {
@@ -56,7 +56,7 @@ public class AppointmentDue {
         return attempts;
     }
 
-    public HashMap<String, ?> getExtraParams() {
+    public HashMap<String, Object> getExtraParams() {
         return extraParams;
     }
 
@@ -92,7 +92,7 @@ public class AppointmentDue {
         this.attempts = attempts;
     }
 
-    void setExtraParams(HashMap<String, ?> extraParams) {
+    void setExtraParams(HashMap<String, Object> extraParams) {
         this.extraParams = extraParams;
     }
 

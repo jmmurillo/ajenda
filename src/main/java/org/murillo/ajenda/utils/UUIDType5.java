@@ -13,6 +13,9 @@ public class UUIDType5 {
     public static final UUID NAMESPACE_OID = UUID.fromString("6ba7b812-9dad-11d1-80b4-00c04fd430c8");
     public static final UUID NAMESPACE_X500 = UUID.fromString("6ba7b814-9dad-11d1-80b4-00c04fd430c8");
 
+    private UUIDType5() {
+    }
+
     public static UUID nameUUIDFromNamespaceAndString(UUID namespace, String name) {
         return nameUUIDFromNamespaceAndBytes(namespace, Objects.requireNonNull(name, "name == null").getBytes(UTF_8));
     }

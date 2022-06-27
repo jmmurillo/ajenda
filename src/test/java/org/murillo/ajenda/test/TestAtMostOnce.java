@@ -11,6 +11,7 @@ import org.murillo.ajenda.core.AjendaScheduler;
 import org.murillo.ajenda.core.ConnectionFactoryFactory;
 import org.murillo.ajenda.core.PeriodicBookConflictPolicy;
 import org.murillo.ajenda.dto.*;
+import org.murillo.ajenda.test.utils.CustomPostgresRule;
 import org.murillo.ajenda.test.utils.TestDataSource;
 
 import java.sql.Connection;
@@ -27,7 +28,7 @@ import java.util.stream.IntStream;
 public class TestAtMostOnce {
 
     @ClassRule
-    public static SingleInstancePostgresRule pg = EmbeddedPostgresRules.singleInstance();
+    public static final CustomPostgresRule pg = new CustomPostgresRule();
 
     public TestDataSource dataSource;
 
@@ -39,12 +40,12 @@ public class TestAtMostOnce {
             connection.setAutoCommit(false);
             try (Statement statement = connection.createStatement()) {
                 statement.execute("DO $$ DECLARE "
-                        + "r RECORD ;"
-                        + "BEGIN "
-                        + "   FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = current_schema()) LOOP "
-                        + "      EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE'; "
-                        + "   END LOOP; "
-                        + "END $$; ");
+                                          + "r RECORD ;"
+                                          + "BEGIN "
+                                          + "   FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = current_schema()) LOOP "
+                                          + "      EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE'; "
+                                          + "   END LOOP; "
+                                          + "END $$; ");
                 connection.commit();
             }
         }
@@ -59,7 +60,8 @@ public class TestAtMostOnce {
                 ConnectionFactoryFactory.from(dataSource),
                 topic,
                 new Clock() {
-                });
+                }
+        );
 
         simpleBookAppointment(scheduler, payload);
 
@@ -93,7 +95,8 @@ public class TestAtMostOnce {
         AjendaScheduler scheduler = new AjendaScheduler(
                 ConnectionFactoryFactory.from(dataSource),
                 topic,
-                clock);
+                clock
+        );
 
         scheduler.book(
                 AppointmentBookingBuilder.aBooking()
@@ -103,7 +106,8 @@ public class TestAtMostOnce {
                 AppointmentBookingBuilder.aBooking()
                         .withPayload(payload)
                         .withDelayedDue(2)
-                        .build());
+                        .build()
+        );
 
         ArrayList<AppointmentDue> read = new ArrayList<>();
         scheduler.checkAgenda().withFetchSize(10).once().readAtMostOnce(false, appointmentDue -> {
@@ -137,7 +141,8 @@ public class TestAtMostOnce {
         AjendaScheduler scheduler = new AjendaScheduler(
                 ConnectionFactoryFactory.from(dataSource),
                 topic,
-                clock);
+                clock
+        );
 
         UUID uuid1 = UUID.randomUUID();
         UUID uuid2 = UUID.randomUUID();
@@ -181,7 +186,8 @@ public class TestAtMostOnce {
                 ConnectionFactoryFactory.from(dataSource),
                 topic,
                 new Clock() {
-                });
+                }
+        );
 
         simpleBookAppointment(scheduler, payload);
 
@@ -221,7 +227,8 @@ public class TestAtMostOnce {
                 1,
                 10,
                 new Clock() {
-                });
+                }
+        );
 
         simpleBookAppointment(scheduler, payloads);
 
@@ -256,7 +263,8 @@ public class TestAtMostOnce {
         AjendaScheduler scheduler = new AjendaScheduler(
                 ConnectionFactoryFactory.from(dataSource),
                 topic,
-                clock);
+                clock
+        );
 
         scheduler.book(
                 AppointmentBookingBuilder.aBooking()
@@ -292,7 +300,8 @@ public class TestAtMostOnce {
                 ConnectionFactoryFactory.from(dataSource),
                 topic,
                 new Clock() {
-                });
+                }
+        );
         try {
             long t = System.currentTimeMillis();
             ArrayList<AppointmentDue> read = new ArrayList<>();
@@ -302,12 +311,14 @@ public class TestAtMostOnce {
                         read.add(e);
                     });
 
-            scheduler.bookPeriodic(PeriodicBookConflictPolicy.FAIL,
+            scheduler.bookPeriodic(
+                    PeriodicBookConflictPolicy.FAIL,
                     PeriodicAppointmentBookingBuilder.aPeriodicBooking()
                             .withFixedPeriod(500, PeriodicPatternType.FIXED_RATE)
                             .withPayload(payload)
                             .withSkipMissed(false)
-                            .build());
+                            .build()
+            );
 
             Thread.sleep(4750);
             scheduler.shutdown(0);
@@ -328,13 +339,15 @@ public class TestAtMostOnce {
                 ConnectionFactoryFactory.from(dataSource),
                 topic,
                 new Clock() {
-                });
+                }
+        );
 
         AjendaScheduler scheduler2 = new AjendaScheduler(
                 ConnectionFactoryFactory.from(dataSource),
                 topic,
                 new Clock() {
-                });
+                }
+        );
         try {
             long t = System.currentTimeMillis();
             ArrayList<AppointmentDue> read = new ArrayList<>();
@@ -350,12 +363,14 @@ public class TestAtMostOnce {
                         read.add(e);
                     });
 
-            scheduler1.bookPeriodic(PeriodicBookConflictPolicy.FAIL,
+            scheduler1.bookPeriodic(
+                    PeriodicBookConflictPolicy.FAIL,
                     PeriodicAppointmentBookingBuilder.aPeriodicBooking()
                             .withFixedPeriod(100, PeriodicPatternType.FIXED_RATE)
                             .withPayload(payload)
                             .withSkipMissed(true)
-                            .build());
+                            .build()
+            );
 
             Thread.sleep(1000);
             scheduler1.shutdown(0);
@@ -377,25 +392,28 @@ public class TestAtMostOnce {
                 ConnectionFactoryFactory.from(dataSource),
                 topic,
                 new Clock() {
-                });
+                }
+        );
         try {
             long t = System.currentTimeMillis();
             ArrayList<AppointmentDue> read = new ArrayList<>();
             scheduler.checkAgenda().withFetchSize(1).periodically(100)
                     .readAtMostOnce(false, false, e -> {
                         System.out.println("It[" + e.getAttempts() + "] " + e.getDueTimestamp()
-                                + "( " + (System.currentTimeMillis() - e.getDueTimestamp()) + " ) "
-                                + e.getAppointmentUid()
-                                + " " + Thread.currentThread().getId());
+                                                   + "( " + (System.currentTimeMillis() - e.getDueTimestamp()) + " ) "
+                                                   + e.getAppointmentUid()
+                                                   + " " + Thread.currentThread().getId());
                         read.add(e);
                     });
 
-            scheduler.bookPeriodic(PeriodicBookConflictPolicy.FAIL,
+            scheduler.bookPeriodic(
+                    PeriodicBookConflictPolicy.FAIL,
                     PeriodicAppointmentBookingBuilder.aPeriodicBooking()
                             .withFixedPeriod(500, PeriodicPatternType.FIXED_DELAY)
                             .withSkipMissed(false)
                             .withPayload(payload)
-                            .build());
+                            .build()
+            );
 
             Thread.sleep(4750);
             scheduler.shutdown(0);
@@ -416,30 +434,33 @@ public class TestAtMostOnce {
                 ConnectionFactoryFactory.from(dataSource),
                 topic,
                 new Clock() {
-                });
+                }
+        );
         try {
             long t = System.currentTimeMillis();
             ArrayList<AppointmentDue> read = new ArrayList<>();
             scheduler.checkAgenda().withFetchSize(10).periodically(1000)
                     .readAtMostOnce(false, false, e -> {
                         System.out.println("It[" + e.getAttempts() + "] " + e.getDueTimestamp()
-                                + "( " + (System.currentTimeMillis() - e.getDueTimestamp()) + " ) "
-                                + e.getAppointmentUid()
-                                + " " + Thread.currentThread().getId()
+                                                   + "( " + (System.currentTimeMillis() - e.getDueTimestamp()) + " ) "
+                                                   + e.getAppointmentUid()
+                                                   + " " + Thread.currentThread().getId()
                         );
 
                         read.add(e);
                     });
 
             UUID periodicUid = UUID.randomUUID();
-            scheduler.bookPeriodic(PeriodicBookConflictPolicy.FAIL,
+            scheduler.bookPeriodic(
+                    PeriodicBookConflictPolicy.FAIL,
                     PeriodicAppointmentBookingBuilder.aPeriodicBooking()
                             .withFixedPeriod(500, PeriodicPatternType.FIXED_RATE)
                             .withPayload(payload)
                             .withUid(periodicUid)
                             .withKeyIteration(20)
                             .withSkipMissed(false)
-                            .build());
+                            .build()
+            );
 
             Thread.sleep(2750);
             Assert.assertEquals(6, read.size());
@@ -458,7 +479,7 @@ public class TestAtMostOnce {
     }
 
     @org.junit.Test
-    @Ignore
+    @Ignore("Very long smoke test")
     public void test_load_book_and_handle() throws Exception {
         String topic = "prueba";
         String payload = UUID.randomUUID().toString();
@@ -469,7 +490,8 @@ public class TestAtMostOnce {
                 8,
                 100000,
                 new Clock() {
-                });
+                }
+        );
 
         int N_APPOINTMENTS = 1000000;
 
@@ -479,16 +501,17 @@ public class TestAtMostOnce {
                 .withFetchSize(10000)
                 .periodically(1)
                 .readAtMostOnce(false, false,
-                        (appointmentDue) -> {
-                            System.out.println(appointmentDue.getPayload());
-                            semaphore.release();
-                        });
+                                (appointmentDue) -> {
+                                    System.out.println(appointmentDue.getPayload());
+                                    semaphore.release();
+                                }
+                );
 
         for (int i = 1; i <= N_APPOINTMENTS; i++) {
             scheduler.book(AppointmentBookingBuilder.aBooking()
-                    .withImmediateDue()
-                    .withPayload(String.valueOf(i))
-                    .build());
+                                   .withImmediateDue()
+                                   .withPayload(String.valueOf(i))
+                                   .build());
         }
 
         semaphore.acquire(N_APPOINTMENTS);

@@ -82,18 +82,18 @@ public interface AjendaBooker extends ConnectionFactory {
     }
 
 
-    default Map<UUID, CancelledResult> cancelPeriodic(UUID... periodic_uuids) throws Exception {
-        return cancelPeriodic(Arrays.asList(periodic_uuids));
+    default Map<UUID, CancelledResult> cancelPeriodic(UUID... periodicUuids) throws Exception {
+        return cancelPeriodic(Arrays.asList(periodicUuids));
     }
 
 
-    default Map<UUID, CancelledResult> cancelPeriodic(Connection connection, UUID... periodic_uuids) throws Exception {
-        return cancelPeriodic(connection, Arrays.asList(periodic_uuids));
+    default Map<UUID, CancelledResult> cancelPeriodic(Connection connection, UUID... periodicUuids) throws Exception {
+        return cancelPeriodic(connection, Arrays.asList(periodicUuids));
     }
 
 
-    default Map<UUID, CancelledResult> cancelPeriodic(Session session, UUID... periodic_uuids) throws Exception {
-        return cancelPeriodic(session, Arrays.asList(periodic_uuids));
+    default Map<UUID, CancelledResult> cancelPeriodic(Session session, UUID... periodicUuids) throws Exception {
+        return cancelPeriodic(session, Arrays.asList(periodicUuids));
     }
 
 
@@ -112,18 +112,18 @@ public interface AjendaBooker extends ConnectionFactory {
     }
 
 
-    default Map<String, CancelledResult> cancelPeriodicKeys(String... periodic_keys) throws Exception {
-        return cancelPeriodicKeys(Arrays.asList(periodic_keys));
+    default Map<String, CancelledResult> cancelPeriodicKeys(String... periodicKeys) throws Exception {
+        return cancelPeriodicKeys(Arrays.asList(periodicKeys));
     }
 
 
-    default Map<String, CancelledResult> cancelPeriodicKeys(Connection connection, String... periodic_keys) throws Exception {
-        return cancelPeriodicKeys(connection, Arrays.asList(periodic_keys));
+    default Map<String, CancelledResult> cancelPeriodicKeys(Connection connection, String... periodicKeys) throws Exception {
+        return cancelPeriodicKeys(connection, Arrays.asList(periodicKeys));
     }
 
 
-    default Map<String, CancelledResult> cancelPeriodicKeys(Session session, String... periodic_keys) throws Exception {
-        return cancelPeriodicKeys(session, Arrays.asList(periodic_keys));
+    default Map<String, CancelledResult> cancelPeriodicKeys(Session session, String... periodicKeys) throws Exception {
+        return cancelPeriodicKeys(session, Arrays.asList(periodicKeys));
     }
 
 
@@ -148,25 +148,25 @@ public interface AjendaBooker extends ConnectionFactory {
     Map<UUID, CancelledResult> cancel(ConnectionFactory connectionFactory, List<UUID> uuids) throws Exception;
 
 
-    default Map<UUID, CancelledResult> cancelPeriodic(List<UUID> periodic_uuids) throws Exception {
+    default Map<UUID, CancelledResult> cancelPeriodic(List<UUID> periodicUuids) throws Exception {
         return cancelPeriodic(this,
-                periodic_uuids);
+                periodicUuids);
     }
 
 
-    default Map<UUID, CancelledResult> cancelPeriodic(Connection connection, List<UUID> periodic_uuids) throws Exception {
+    default Map<UUID, CancelledResult> cancelPeriodic(Connection connection, List<UUID> periodicUuids) throws Exception {
         return cancelPeriodic(() -> new JdbcConnectionWrapper(() -> connection).recursiveConnectionWrapper(),
-                periodic_uuids);
+                periodicUuids);
     }
 
 
-    default Map<UUID, CancelledResult> cancelPeriodic(Session session, List<UUID> periodic_uuids) throws Exception {
+    default Map<UUID, CancelledResult> cancelPeriodic(Session session, List<UUID> periodicUuids) throws Exception {
         return cancelPeriodic(() -> new HibernateConnectionWrapper(() -> session).recursiveConnectionWrapper(),
-                periodic_uuids);
+                periodicUuids);
     }
 
 
-    Map<UUID, CancelledResult> cancelPeriodic(ConnectionFactory connectionFactory, List<UUID> periodic_uuids) throws Exception;
+    Map<UUID, CancelledResult> cancelPeriodic(ConnectionFactory connectionFactory, List<UUID> periodicUuids) throws Exception;
 
 
     default Map<String, CancelledResult> cancelKeys(List<String> keys) throws Exception {
@@ -190,23 +190,23 @@ public interface AjendaBooker extends ConnectionFactory {
     Map<String, CancelledResult> cancelKeys(ConnectionFactory connectionFactory, List<String> keys) throws Exception;
 
 
-    default Map<String, CancelledResult> cancelPeriodicKeys(List<String> periodic_keys) throws Exception {
+    default Map<String, CancelledResult> cancelPeriodicKeys(List<String> periodicKeys) throws Exception {
         return cancelPeriodicKeys(this,
-                periodic_keys);
+                periodicKeys);
     }
 
 
-    default Map<String, CancelledResult> cancelPeriodicKeys(Connection connection, List<String> periodic_keys) throws Exception {
+    default Map<String, CancelledResult> cancelPeriodicKeys(Connection connection, List<String> periodicKeys) throws Exception {
         return cancelPeriodicKeys(() -> new JdbcConnectionWrapper(() -> connection).recursiveConnectionWrapper(),
-                periodic_keys);
+                periodicKeys);
     }
 
 
-    default Map<String, CancelledResult> cancelPeriodicKeys(Session session, List<String> periodic_keys) throws Exception {
+    default Map<String, CancelledResult> cancelPeriodicKeys(Session session, List<String> periodicKeys) throws Exception {
         return cancelPeriodicKeys(() -> new HibernateConnectionWrapper(() -> session).recursiveConnectionWrapper(),
-                periodic_keys);
+                periodicKeys);
     }
 
 
-    Map<String, CancelledResult> cancelPeriodicKeys(ConnectionFactory connectionFactory, List<String> periodic_keys) throws Exception;
+    Map<String, CancelledResult> cancelPeriodicKeys(ConnectionFactory connectionFactory, List<String> periodicKeys) throws Exception;
 }

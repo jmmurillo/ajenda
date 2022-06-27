@@ -2,7 +2,6 @@ package org.murillo.ajenda.test;
 
 import io.zonky.test.db.postgres.junit.EmbeddedPostgresRules;
 import io.zonky.test.db.postgres.junit.SingleInstancePostgresRule;
-import org.junit.Assert;
 import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Ignore;
@@ -11,6 +10,7 @@ import org.murillo.ajenda.core.AjendaScheduler;
 import org.murillo.ajenda.core.ConnectionFactoryFactory;
 import org.murillo.ajenda.core.PeriodicBookConflictPolicy;
 import org.murillo.ajenda.dto.*;
+import org.murillo.ajenda.test.utils.CustomPostgresRule;
 import org.murillo.ajenda.test.utils.TestDataSource;
 
 import java.sql.Connection;
@@ -24,14 +24,15 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-/*
- */
+import static org.junit.Assert.assertEquals;
+//
 public class TestAtLeastOnce {
 
     @ClassRule
-    public static SingleInstancePostgresRule pg = EmbeddedPostgresRules.singleInstance();
+    public static final CustomPostgresRule pg = new CustomPostgresRule();
 
     public TestDataSource dataSource;
+
 
     @Before
     public void clearDB() throws SQLException {
@@ -69,13 +70,13 @@ public class TestAtLeastOnce {
             read.add(appointmentDue);
         });
 
-        Assert.assertEquals(1, read.size());
-        Assert.assertEquals(payload, read.get(0).getPayload());
+        assertEquals(1, read.size());
+        assertEquals(payload, read.get(0).getPayload());
 
         scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
-        Assert.assertEquals(1, read.size());
+        assertEquals(1, read.size());
     }
 
     @org.junit.Test
@@ -111,15 +112,15 @@ public class TestAtLeastOnce {
             read.add(appointmentDue);
         });
 
-        Assert.assertEquals(0, read.size());
+        assertEquals(0, read.size());
         time.set(3L);
 
         scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
-        Assert.assertEquals(2, read.size());
-        Assert.assertEquals(payload, read.get(0).getPayload());
-        Assert.assertEquals(payload, read.get(1).getPayload());
+        assertEquals(2, read.size());
+        assertEquals(payload, read.get(0).getPayload());
+        assertEquals(payload, read.get(1).getPayload());
     }
 
     @org.junit.Test
@@ -161,7 +162,7 @@ public class TestAtLeastOnce {
             read.add(appointmentDue);
         });
 
-        Assert.assertEquals(0, read.size());
+        assertEquals(0, read.size());
 
         scheduler.cancel(uuid1);
         time.set(3L);
@@ -169,8 +170,8 @@ public class TestAtLeastOnce {
         scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
-        Assert.assertEquals(1, read.size());
-        Assert.assertEquals(uuid2, read.get(0).getAppointmentUid());
+        assertEquals(1, read.size());
+        assertEquals(uuid2, read.get(0).getAppointmentUid());
     }
 
     @org.junit.Test
@@ -193,14 +194,14 @@ public class TestAtLeastOnce {
             scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
                 read.add(appointmentDue);
             });
-            Assert.assertEquals(10, read.size());
+            assertEquals(10, read.size());
             scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
                 read.add(appointmentDue);
             });
-            Assert.assertEquals(19, read.size());
+            assertEquals(19, read.size());
             //Check order is respected
             for (int i = 0; i < read.size(); i++) {
-                Assert.assertEquals(String.valueOf(i), read.get(i).getPayload());
+                assertEquals(String.valueOf(i), read.get(i).getPayload());
             }
 
         } finally {
@@ -241,14 +242,14 @@ public class TestAtLeastOnce {
         scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
-        Assert.assertEquals(0, read.size());
+        assertEquals(0, read.size());
 
         time.set(2L);
 
         scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
-        Assert.assertEquals(2, read.size());
+        assertEquals(2, read.size());
     }
 
     @org.junit.Test
@@ -282,19 +283,19 @@ public class TestAtLeastOnce {
         scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
-        Assert.assertEquals(0, read.size());
+        assertEquals(0, read.size());
 
         time.set(1L);
         scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
-        Assert.assertEquals(1, read.size());
+        assertEquals(1, read.size());
 
         time.set(2L);
         scheduler.checkAgenda().withFetchSize(10).once().readAtLeastOnce(10000, (appointmentDue, cancelFlag) -> {
             read.add(appointmentDue);
         });
-        Assert.assertEquals(2, read.size());
+        assertEquals(2, read.size());
     }
 
     @org.junit.Test
@@ -325,7 +326,7 @@ public class TestAtLeastOnce {
             Thread.sleep(4750);
             scheduler.shutdown(0);
 
-            Assert.assertEquals(10, read.size());
+            assertEquals(10, read.size());
         } finally {
             scheduler.shutdown(0);
         }
@@ -359,15 +360,15 @@ public class TestAtLeastOnce {
                             .build());
 
             Thread.sleep(2750);
-            Assert.assertEquals(6, read.size());
+            assertEquals(6, read.size());
 
             scheduler.cancelPeriodic(periodicUid);
 
             Thread.sleep(2000);
-            Assert.assertEquals(6, read.size());
+            assertEquals(6, read.size());
 
             scheduler.shutdown(0);
-            Assert.assertEquals(6, read.size());
+            assertEquals(6, read.size());
         } finally {
             scheduler.shutdown(0);
         }
@@ -375,7 +376,7 @@ public class TestAtLeastOnce {
     }
 
     @org.junit.Test
-    @Ignore
+    @Ignore("Very long smoke test")
     public void test_load_book_and_handle() throws Exception {
         String topic = "prueba";
         String payload = UUID.randomUUID().toString();
@@ -412,10 +413,11 @@ public class TestAtLeastOnce {
     }
 
     private void simpleBookAppointment(AjendaBooker booker, String payload) throws Exception {
-        booker.book(
-                AppointmentBookingBuilder.aBooking()
-                        .withPayload(payload)
-                        .build());
+        booker
+                .book(
+                        AppointmentBookingBuilder.aBooking()
+                                .withPayload(payload)
+                                .build());
     }
 
     private void simpleBookAppointment(AjendaBooker booker, List<String> payloads) throws Exception {

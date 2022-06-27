@@ -7,8 +7,6 @@ import java.util.UUID;
 
 public final class AppointmentBookingBuilder {
 
-    private static final UUID UUID_ZERO = new UUID(0L, 0L);
-
     private UUID appointmentUid;
     private long dueTimestamp = 0;
     private int ttl = 0;

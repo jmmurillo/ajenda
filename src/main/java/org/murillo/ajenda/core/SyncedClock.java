@@ -6,6 +6,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -14,7 +15,7 @@ public class SyncedClock implements Clock {
 
     public static final int SYNC_ITERATIONS = 5;
     public static final int DEFAULT_SYNC_PERIOD_MINUTES = 15;
-    private static String GET_TIME_QUERY = "SELECT EXTRACT(EPOCH FROM clock_timestamp()) * 1000";
+    private static final String GET_TIME_QUERY = "SELECT EXTRACT(EPOCH FROM clock_timestamp()) * 1000";
     private volatile long offset = 0;
     private ConnectionFactory connectionFactory;
     private ScheduledThreadPoolExecutor executor;
@@ -36,6 +37,7 @@ public class SyncedClock implements Clock {
                 TimeUnit.MINUTES);
     }
 
+    @Override
     public boolean shutdown(long gracePeriodMs) {
         this.scheduledFuture.cancel(true);
         return Common.shutdown(this.executor, gracePeriodMs);
@@ -63,7 +65,7 @@ public class SyncedClock implements Clock {
         }
     }
 
-    public static boolean requestTime(ArrayList<long[]> offsets, ConnectionWrapper connection) throws Exception {
+    public static boolean requestTime(List<long[]> offsets, ConnectionWrapper connection) throws Exception {
         return connection.doWork(conn -> {
             try (PreparedStatement preparedStatement = conn.prepareStatement(GET_TIME_QUERY)) {
                 if (Thread.currentThread().isInterrupted()) {
@@ -82,6 +84,7 @@ public class SyncedClock implements Clock {
         });
     }
 
+    @Override
     public long nowEpochMs() {
         return System.currentTimeMillis() + this.offset;
     }

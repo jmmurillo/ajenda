@@ -17,6 +17,10 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 public class Common {
+
+    private Common() {
+    }
+
     public static String getTableNameForTopic(String topic) {
         return String.format("ajenda_%s", topic).toLowerCase(Locale.ENGLISH);
     }
@@ -54,10 +58,10 @@ public class Common {
     public static AppointmentDue extractAppointmentDue(ResultSet rs, long nowEpoch) throws SQLException {
         ResultSetMetaData metaData = rs.getMetaData();
         UUID uuid = null;
-        long creation_date = 0;
-        long due_date = 0;
+        long creationDate = 0;
+        long dueDate = 0;
         int ttl = 0;
-        long timeout_date = 0;
+        long timeoutDate = 0;
         int attempts = 0;
         String payload = null;
         UUID periodicAppointmentUid = null;
@@ -71,16 +75,16 @@ public class Common {
                     uuid = UUID.fromString(rs.getString(i));
                     break;
                 case "creation_date":
-                    creation_date = rs.getLong(i);
+                    creationDate = rs.getLong(i);
                     break;
                 case "due_date":
-                    due_date = rs.getLong(i);
+                    dueDate = rs.getLong(i);
                     break;
                 case "ttl":
                     ttl = rs.getInt(i);
                     break;
                 case "timeout_date":
-                    timeout_date = rs.getLong(i);
+                    timeoutDate = rs.getLong(i);
                     break;
                 case "attempts":
                     attempts = rs.getInt(i);
@@ -108,7 +112,7 @@ public class Common {
 
         return new AppointmentDue(
                 uuid,
-                due_date,
+                dueDate,
                 ttl,
                 payload,
                 attempts,
@@ -122,13 +126,13 @@ public class Common {
     public static PeriodicAppointmentBooking extractPeriodicAppointment(ResultSet rs) throws SQLException {
         ResultSetMetaData metaData = rs.getMetaData();
         UUID uuid = null;
-        long creation_date = 0;
-        PeriodicPatternType pattern_type = null;
+        long creationDate = 0;
+        PeriodicPatternType patternType = null;
         String pattern = null;
         int ttl = 0;
         String payload = null;
-        int key_iteration = 1;
-        boolean skip_missed = true;
+        int keyIteration = 1;
+        boolean skipMissed = true;
         HashMap<String, Object> extraParams = new HashMap<>();
 
         for (int i = 1; i <= metaData.getColumnCount(); i++) {
@@ -137,10 +141,10 @@ public class Common {
                     uuid = UUID.fromString(rs.getString(i));
                     break;
                 case "creation_date":
-                    creation_date = rs.getLong(i);
+                    creationDate = rs.getLong(i);
                     break;
                 case "pattern_type":
-                    pattern_type = PeriodicPatternType.fromId(rs.getInt(i));
+                    patternType = PeriodicPatternType.fromId(rs.getInt(i));
                     break;
                 case "pattern":
                     pattern = rs.getString(i);
@@ -152,10 +156,10 @@ public class Common {
                     payload = rs.getString(i);
                     break;
                 case "key_iteration":
-                    key_iteration = rs.getInt(i);
+                    keyIteration = rs.getInt(i);
                     break;
                 case "skip_missed":
-                    skip_missed = rs.getBoolean(i);
+                    skipMissed = rs.getBoolean(i);
                     break;
                 default:
                     extraParams.put(metaData.getColumnName(i), rs.getObject(i));
@@ -165,13 +169,13 @@ public class Common {
 
         return new PeriodicAppointmentBooking(
                 uuid,
-                pattern_type,
+                patternType,
                 pattern,
                 ttl,
                 payload,
                 extraParams.isEmpty() ? null : extraParams,
-                key_iteration,
-                skip_missed,
+                keyIteration,
+                skipMissed,
                 -1L,
                 false,
                 0

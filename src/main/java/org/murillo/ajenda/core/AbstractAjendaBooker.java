@@ -47,9 +47,6 @@ public abstract class AbstractAjendaBooker implements AjendaBooker {
     }
 
     @Override
-    public abstract ConnectionWrapper getConnection() throws Exception;
-
-    @Override
     public String getTopic() {
         return topic;
     }
@@ -205,51 +202,51 @@ public abstract class AbstractAjendaBooker implements AjendaBooker {
     }
 
     @Override
-    public Map<UUID, CancelledResult> cancelPeriodic(ConnectionFactory connectionFactory, List<UUID> periodic_uuids) throws Exception {
+    public Map<UUID, CancelledResult> cancelPeriodic(ConnectionFactory connectionFactory, List<UUID> periodicUuids) throws Exception {
         Map<UUID, CancelledResult> cancelResults = BookModel.cancelPeriodic(
                 this.getTableNameWithSchema(),
                 this.getPeriodicTableNameWithSchema(),
                 connectionFactory,
-                periodic_uuids);
-        periodicCancelInQueue(periodic_uuids, cancelResults);
+                periodicUuids);
+        periodicCancelInQueue(periodicUuids, cancelResults);
         return cancelResults;
     }
 
     @Override
     public Map<String, CancelledResult> cancelKeys(ConnectionFactory connectionFactory, List<String> keys) throws Exception {
-        Map<UUID, String> uuids_map = keys.stream()
+        Map<UUID, String> uuidsMap = keys.stream()
                 .collect(Collectors.toMap(
                         UUIDType5::nameUUIDFromCustomString,
                         Function.identity(),
                         (old, neu) -> old,
                         HashMap::new));
 
-        ArrayList<UUID> uuids_list = new ArrayList<>(uuids_map.keySet());
+        ArrayList<UUID> uuidsList = new ArrayList<>(uuidsMap.keySet());
         Map<UUID, CancelledResult> cancelResults = BookModel.cancel(
                 this.getTableNameWithSchema(),
                 connectionFactory,
-                uuids_list);
-        cancelInQueue(uuids_list, cancelResults);
-        return cancelResults.entrySet().stream().collect(Collectors.toMap(e -> uuids_map.get(e.getKey()), Map.Entry::getValue, (old, neu) -> old));
+                uuidsList);
+        cancelInQueue(uuidsList, cancelResults);
+        return cancelResults.entrySet().stream().collect(Collectors.toMap(e -> uuidsMap.get(e.getKey()), Map.Entry::getValue, (old, neu) -> old));
     }
 
     @Override
-    public Map<String, CancelledResult> cancelPeriodicKeys(ConnectionFactory connectionFactory, List<String> periodic_keys) throws Exception {
-        Map<UUID, String> periodic_uuids_map = periodic_keys.stream()
+    public Map<String, CancelledResult> cancelPeriodicKeys(ConnectionFactory connectionFactory, List<String> periodicKeys) throws Exception {
+        Map<UUID, String> periodicUuidsMap = periodicKeys.stream()
                 .collect(Collectors.toMap(
                         UUIDType5::nameUUIDFromCustomString,
                         Function.identity(),
                         (old, neu) -> old,
                         HashMap::new));
 
-        ArrayList<UUID> periodic_uuids_list = new ArrayList<>(periodic_uuids_map.keySet());
+        ArrayList<UUID> periodicUuidsList = new ArrayList<>(periodicUuidsMap.keySet());
         Map<UUID, CancelledResult> cancelResults = BookModel.cancelPeriodic(
                 this.getTableNameWithSchema(),
                 this.getPeriodicTableNameWithSchema(),
                 connectionFactory,
-                periodic_uuids_list);
-        periodicCancelInQueue(periodic_uuids_list, cancelResults);
-        return cancelResults.entrySet().stream().collect(Collectors.toMap(e -> periodic_uuids_map.get(e.getKey()), Map.Entry::getValue, (old, neu) -> old));
+                periodicUuidsList);
+        periodicCancelInQueue(periodicUuidsList, cancelResults);
+        return cancelResults.entrySet().stream().collect(Collectors.toMap(e -> periodicUuidsMap.get(e.getKey()), Map.Entry::getValue, (old, neu) -> old));
     }
 
     protected void cancelInQueue(List<UUID> uuids, Map<UUID, CancelledResult> cancelledResultMap) {

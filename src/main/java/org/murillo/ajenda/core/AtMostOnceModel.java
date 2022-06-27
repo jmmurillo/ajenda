@@ -140,7 +140,7 @@ public class AtMostOnceModel {
                 .withDueTimestamp(appointmentDue.getDueTimestamp())
                 .withPayload(appointmentDue.getPayload());
         if (appointmentDue.getExtraParams() != null) {
-            appointmentDue.getExtraParams().forEach((k, v) -> builder.withExtraParam(k, v));
+            appointmentDue.getExtraParams().forEach(builder::withExtraParam);
         }
         //TODO keep periodic_uid or not ?
         try {
@@ -157,7 +157,7 @@ public class AtMostOnceModel {
         }
     }
 
-    private synchronized static List<AppointmentDue> selectAndDelete(
+    private static synchronized List<AppointmentDue> selectAndDelete(
             AjendaScheduler ajendaScheduler,
             long lookAhead,
             int limitSize,

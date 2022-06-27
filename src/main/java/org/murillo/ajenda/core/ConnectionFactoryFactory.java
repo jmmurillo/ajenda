@@ -2,6 +2,9 @@ package org.murillo.ajenda.core;
 
 public class ConnectionFactoryFactory {
 
+    private ConnectionFactoryFactory() {
+    }
+
     public static ConnectionFactory from(HibernateSessionFactory hibernateSessionFactory) {
         return () -> new HibernateConnectionWrapper(hibernateSessionFactory);
     }

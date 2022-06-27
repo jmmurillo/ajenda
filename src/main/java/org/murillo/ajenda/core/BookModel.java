@@ -17,7 +17,10 @@ import java.util.stream.IntStream;
 
 import static org.murillo.ajenda.core.Common.extractPeriodicAppointment;
 
-class BookModel<T extends Connection> {
+class BookModel {
+
+    private BookModel() {
+    }
 
     private static final String BOOK_INSERT_QUERY =
             "INSERT INTO %s AS book "
@@ -46,7 +49,7 @@ class BookModel<T extends Connection> {
                     + "ON CONFLICT (uuid) DO UPDATE SET "
                     + "(uuid, creation_date, pattern_type, pattern, ttl, payload, key_iteration, skip_missed%s) "
                     + "= (?, ?, ?, ?, ?, ?, ?, ?%s) "
-                    + "RETURNING CASE WHEN xmax::text::int > 0 THEN TRUE ELSE FALSE END ";
+                    + "RETURNING CASE WHEN xmax::text <> '0' THEN TRUE ELSE FALSE END ";
 
     private static final String PERIODIC_BOOK_SELECT_QUERY =
             "SELECT * "
@@ -122,15 +125,15 @@ class BookModel<T extends Connection> {
             String tableName,
             String periodicTableName,
             ConnectionFactory connectionFactory,
-            List<UUID> periodic_uuids
+            List<UUID> periodicUuids
     ) throws Exception {
 
         Map<UUID, CancelledResult> result = new HashMap<>();
 
-        while (periodic_uuids.remove(null)) ;
-        if (periodic_uuids.isEmpty()) return result;
+        while (periodicUuids.remove(null)) ;
+        if (periodicUuids.isEmpty()) return result;
 
-        String questionMarks = buildQuestionMarks(periodic_uuids.size());
+        String questionMarks = buildQuestionMarks(periodicUuids.size());
         String cancelFromPeriodicSql = String.format(
                 CANCEL_PERIODIC_BOOKINGS_FROM_PERIODIC_QUERY,
                 periodicTableName,
@@ -149,15 +152,15 @@ class BookModel<T extends Connection> {
                     throw new IllegalStateException("Connection must have auto-commit disabled");
                 try (PreparedStatement stmt = connection.prepareStatement(cancelFromPeriodicSql)) {
                     int place = 1;
-                    for (int i = 0; i < periodic_uuids.size(); i++) {
-                        stmt.setObject(place++, periodic_uuids.get(i));
+                    for (int i = 0; i < periodicUuids.size(); i++) {
+                        stmt.setObject(place++, periodicUuids.get(i));
                     }
                     stmt.execute();
                 }
                 try (PreparedStatement stmt = connection.prepareStatement(cancelFromMainSql)) {
                     int place = 1;
-                    for (int i = 0; i < periodic_uuids.size(); i++) {
-                        stmt.setObject(place++, periodic_uuids.get(i));
+                    for (int i = 0; i < periodicUuids.size(); i++) {
+                        stmt.setObject(place++, periodicUuids.get(i));
                     }
                     try (ResultSet rs = stmt.executeQuery()) {
                         while (rs.next()) {

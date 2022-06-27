@@ -41,9 +41,11 @@ public class JdbcConnectionWrapper implements ConnectionWrapper {
                 this.connection.rollback();
             }
         } finally {
-            this.connection.close();
+            if(this.connection != null) {
+                this.connection.close();
+                this.connection = null;
+            }
             this.connectionFactory = null;
-            this.connection = null;
         }
     }
 }

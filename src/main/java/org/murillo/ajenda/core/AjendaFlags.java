@@ -5,6 +5,9 @@ public class AjendaFlags {
     public static final int GEN_NEXT_FLAG = 1 << 0;
     public static final int SKIP_MISSED_FLAG = 1 << 1;
 
+    private AjendaFlags() {
+    }
+
     public static boolean isGenNext(int flags) {
         return (flags & GEN_NEXT_FLAG) != 0;
     }

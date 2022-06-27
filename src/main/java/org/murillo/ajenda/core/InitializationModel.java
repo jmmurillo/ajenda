@@ -5,6 +5,9 @@ import java.util.HashMap;
 
 public class InitializationModel {
 
+    private InitializationModel() {
+    }
+
     public static final String TABLE_FOR_TOPIC_QUERY =
             "CREATE TABLE IF NOT EXISTS %s ( "
                     + "uuid             UUID PRIMARY KEY, "

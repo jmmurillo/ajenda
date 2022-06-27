@@ -4,7 +4,7 @@ import java.util.UUID;
 
 public class ConflictingPeriodicBookingException extends Exception {
 
-    private UUID conflictingPeriodicAppointmentUid;
+    private final UUID conflictingPeriodicAppointmentUid;
 
     public ConflictingPeriodicBookingException(UUID conflictingPeriodicAppointmentUid) {
         super(String.valueOf(conflictingPeriodicAppointmentUid));

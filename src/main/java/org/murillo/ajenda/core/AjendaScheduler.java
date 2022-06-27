@@ -18,7 +18,10 @@ import java.util.concurrent.atomic.AtomicLong;
 public class AjendaScheduler extends AbstractAjendaBooker {
 
     public static final int CONNECTION_VALIDATION_TIMEOUT_SEC = 3;
-    private static Logger LOGGER = LoggerFactory.getLogger(AjendaScheduler.class);
+    private static final String ABOUT_TO_POLL_TOPIC_LOGF = "About to poll topic {}";
+    private static final String UNEXPECTED_ERROR_WHEN_POLLING_TOPIC_STRF = "Unexpected error when polling topic %s";
+    private static final String THREAD_WAS_INTERRUPTED_WHILE_POLLING_TOPIC_STRF = "Thread was interrupted while polling topic %s";
+    private static final Logger LOGGER = LoggerFactory.getLogger(AjendaScheduler.class);
 
     public static final String DEFAULT_SCHEMA_NAME = "public";
     private static final int DEFAULT_QUEUE_SIZE = 1000;
@@ -29,7 +32,7 @@ public class AjendaScheduler extends AbstractAjendaBooker {
     protected volatile ScheduledFuture<?> pollerScheduledFuture = null;
     private boolean ownClock = false;
 
-    private long startTime;
+    private long creationTime;
     private AtomicLong readCount = new AtomicLong(0);
     private AtomicLong processedCount = new AtomicLong(0);
     private long beganToProcessCount = 0;
@@ -48,14 +51,20 @@ public class AjendaScheduler extends AbstractAjendaBooker {
         this.ownClock = true;
     }
 
-    public AjendaScheduler(ConnectionFactory dataSource, String topic, Clock clock, String customSchema) throws Exception {
+    public AjendaScheduler(
+            ConnectionFactory dataSource,
+            String topic,
+            Clock clock,
+            String customSchema
+    ) throws Exception {
         this(
                 dataSource,
                 topic,
                 Runtime.getRuntime().availableProcessors(),
                 DEFAULT_QUEUE_SIZE,
                 clock,
-                customSchema);
+                customSchema
+        );
     }
 
     public AjendaScheduler(ConnectionFactory dataSource, String topic, Clock clock) throws Exception {
@@ -65,10 +74,16 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                 Runtime.getRuntime().availableProcessors(),
                 DEFAULT_QUEUE_SIZE,
                 clock,
-                DEFAULT_SCHEMA_NAME);
+                DEFAULT_SCHEMA_NAME
+        );
     }
 
-    public AjendaScheduler(ConnectionFactory dataSource, String topic, int concurrencyLevel, int maxQueueSize) throws Exception {
+    public AjendaScheduler(
+            ConnectionFactory dataSource,
+            String topic,
+            int concurrencyLevel,
+            int maxQueueSize
+    ) throws Exception {
         this(dataSource, topic, concurrencyLevel, maxQueueSize, new SyncedClock(dataSource), DEFAULT_SCHEMA_NAME);
         this.ownClock = true;
     }
@@ -104,11 +119,19 @@ public class AjendaScheduler extends AbstractAjendaBooker {
         InitializationModel.initTableForTopic(dataSource, topic, schemaName, tableName, periodicTableName);
         this.maxQueueSize = maxQueueSize;
         this.scheduledFutureCache = new MapMaker().weakValues().makeMap();
-        this.executor = new ScheduledThreadPoolExecutor(concurrencyLevel, new AjendaExecutorThreadFactory(topic), new ThreadPoolExecutor.DiscardPolicy());
+        this.executor = new ScheduledThreadPoolExecutor(
+                concurrencyLevel,
+                new AjendaExecutorThreadFactory(topic),
+                new ThreadPoolExecutor.DiscardPolicy()
+        );
         this.executor.setRemoveOnCancelPolicy(true);
-        this.poller = new ScheduledThreadPoolExecutor(1, new AjendaPollerThreadFactory(topic), new ThreadPoolExecutor.DiscardPolicy());
+        this.poller = new ScheduledThreadPoolExecutor(
+                1,
+                new AjendaPollerThreadFactory(topic),
+                new ThreadPoolExecutor.DiscardPolicy()
+        );
         this.poller.setRemoveOnCancelPolicy(true);
-        this.startTime = clock.nowEpochMs();
+        this.creationTime = clock.nowEpochMs();
 
         //TODO Ofrecer estadísticas de trabajos en proceso, en cola, etc.
     }
@@ -121,10 +144,12 @@ public class AjendaScheduler extends AbstractAjendaBooker {
         this.mayInterruptOnCancel = mayInterruptOnCancel;
     }
 
-    public ScheduledFuture<?> schedule(UUID appointmentUid,
-                                       Runnable runnable,
-                                       long delay,
-                                       TimeUnit unit) {
+    public ScheduledFuture<?> schedule(
+            UUID appointmentUid,
+            Runnable runnable,
+            long delay,
+            TimeUnit unit
+    ) {
         ScheduledFuture<?> scheduledFuture = this.executor.schedule(runnable, delay, unit);
         this.scheduledFutureCache.put(appointmentUid, scheduledFuture);
         return scheduledFuture;
@@ -181,26 +206,24 @@ public class AjendaScheduler extends AbstractAjendaBooker {
         }
     }
 
-    public boolean shutdown(long gracePeriodMs) {
+    public boolean shutdown(long gracePeriodMs) throws InterruptedException {
         this.poller.shutdownNow();
         this.executor.shutdownNow();
         if (ownClock) this.clock.shutdown(0L);
-        try {
-            return this.executor.awaitTermination(gracePeriodMs, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-            return false;
-        }
+        return this.executor.awaitTermination(gracePeriodMs, TimeUnit.MILLISECONDS);
     }
 
+    @Override
     public String getTopic() {
         return topic;
     }
 
+    @Override
     public String getTableNameWithSchema() {
         return '\"' + schemaName + "\"." + tableName;
     }
 
+    @Override
     public String getPeriodicTableNameWithSchema() {
         return '\"' + schemaName + "\"." + periodicTableName;
     }
@@ -218,6 +241,7 @@ public class AjendaScheduler extends AbstractAjendaBooker {
         return executor;
     }
 
+    @Override
     public Clock getClock() {
         return clock;
     }
@@ -247,14 +271,17 @@ public class AjendaScheduler extends AbstractAjendaBooker {
         return new CheckAgenda();
     }
 
+    @Override
     public String getSchemaName() {
         return schemaName;
     }
 
+    @Override
     public String getTableName() {
         return tableName;
     }
 
+    @Override
     public String getPeriodicTableName() {
         return periodicTableName;
     }
@@ -346,7 +373,8 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                     reBookOnException,
                     true,
                     listener,
-                    customCondition);
+                    customCondition
+            );
         }
 
         public void readAtLeastOnce(long timeout, CancellableAppointmentListener listener) throws Exception {
@@ -357,11 +385,15 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                     timeout,
                     true,
                     listener,
-                    customCondition);
+                    customCondition
+            );
         }
 
         //Connection In
-        public void readAtLeastOnceTransactional(long timeout, TransactionalAppointmentListener listener) throws Exception {
+        public void readAtLeastOnceTransactional(
+                long timeout,
+                TransactionalAppointmentListener listener
+        ) throws Exception {
             AtLeastOnceModel.process(
                     AjendaScheduler.this,
                     0,
@@ -369,7 +401,8 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                     timeout,
                     true,
                     listener,
-                    customCondition);
+                    customCondition
+            );
         }
     }
 
@@ -381,7 +414,12 @@ public class AjendaScheduler extends AbstractAjendaBooker {
         private String customCondition;
         //TODO Hacer posible parar y cambiar el periodo
 
-        public CheckAgendaPeriodically(int limitSize, long pollPeriodMs, long periodDeviationMs, String customCondition) {
+        public CheckAgendaPeriodically(
+                int limitSize,
+                long pollPeriodMs,
+                long periodDeviationMs,
+                String customCondition
+        ) {
             if (limitSize < 1) throw new IllegalArgumentException("fetchSize must be greater than zero");
             this.limitSize = limitSize;
             if (pollPeriodMs < 1) throw new IllegalArgumentException("pollPeriodMs must be greater than zero");
@@ -394,7 +432,11 @@ public class AjendaScheduler extends AbstractAjendaBooker {
             this.customCondition = customCondition;
         }
 
-        public void readAtMostOnce(boolean onlyLate, boolean reBookOnException, SimpleAppointmentListener listener) throws Exception {
+        public void readAtMostOnce(
+                boolean onlyLate,
+                boolean reBookOnException,
+                SimpleAppointmentListener listener
+        ) {
             long remainingDelay = 0L;
             if (AjendaScheduler.this.pollerScheduledFuture != null) {
                 remainingDelay = AjendaScheduler.this.pollerScheduledFuture.getDelay(TimeUnit.MILLISECONDS);
@@ -403,12 +445,13 @@ public class AjendaScheduler extends AbstractAjendaBooker {
             if (this.periodDeviationMs > 0) {
                 long minimumPeriod = pollPeriodMs - periodDeviationMs;
                 AtomicLong currentSleep = new AtomicLong(0);
-                AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleWithFixedDelay(() -> {
+                AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleWithFixedDelay(
+                        () -> {
                             try {
                                 long nextSleep = ThreadLocalRandom.current()
                                         .nextLong(0, 2 * periodDeviationMs);
                                 Thread.sleep(currentSleep.getAndSet(nextSleep));
-                                LOGGER.debug("About to poll topic {}", AjendaScheduler.this.getTopic());
+                                LOGGER.debug(ABOUT_TO_POLL_TOPIC_LOGF, AjendaScheduler.this.getTopic());
                                 AtMostOnceModel.process(
                                         AjendaScheduler.this,
                                         minimumPeriod + nextSleep,
@@ -417,11 +460,15 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                                         reBookOnException,
                                         false,
                                         listener,
-                                        customCondition);
-                            } catch (Throwable th) {
+                                        customCondition
+                                );
+                            } catch (Exception th) {
                                 //TODO
                                 //Show must go on
-                                LOGGER.error(String.format("Unexpected error when polling topic %s", AjendaScheduler.this.getTopic()), th);
+                                LOGGER.error(String.format(
+                                        UNEXPECTED_ERROR_WHEN_POLLING_TOPIC_STRF,
+                                        AjendaScheduler.this.getTopic()
+                                ), th);
                             }
                         },
                         remainingDelay,
@@ -429,7 +476,8 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                         TimeUnit.MILLISECONDS
                 );
             } else {
-                AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleAtFixedRate(() -> {
+                AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleAtFixedRate(
+                        () -> {
                             try {
                                 //LOGGER.debug("About to poll topic {}", AjendaScheduler.this.getTopic());
                                 AtMostOnceModel.process(
@@ -440,11 +488,21 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                                         reBookOnException,
                                         false,
                                         listener,
-                                        customCondition);
-                            } catch (Throwable th) {
+                                        customCondition
+                                );
+                            } catch (InterruptedException e) {
+                                LOGGER.error(String.format(
+                                        THREAD_WAS_INTERRUPTED_WHILE_POLLING_TOPIC_STRF,
+                                        AjendaScheduler.this.getTopic()
+                                ), e);
+                                Thread.currentThread().interrupt();
+                            } catch (Exception th) {
                                 //TODO
                                 //Show must go on
-                                LOGGER.error(String.format("Unexpected error when polling topic %s", AjendaScheduler.this.getTopic()), th);
+                                LOGGER.error(String.format(
+                                        UNEXPECTED_ERROR_WHEN_POLLING_TOPIC_STRF,
+                                        AjendaScheduler.this.getTopic()
+                                ), th);
                             }
                         },
                         remainingDelay,
@@ -454,7 +512,7 @@ public class AjendaScheduler extends AbstractAjendaBooker {
             }
         }
 
-        public void readAtLeastOnce(long timeout, CancellableAppointmentListener listener) throws Exception {
+        public void readAtLeastOnce(long timeout, CancellableAppointmentListener listener) {
             long remainingDelay = 0L;
             if (AjendaScheduler.this.pollerScheduledFuture != null) {
                 remainingDelay = AjendaScheduler.this.pollerScheduledFuture.getDelay(TimeUnit.MILLISECONDS);
@@ -463,12 +521,13 @@ public class AjendaScheduler extends AbstractAjendaBooker {
             if (this.periodDeviationMs > 0) {
                 long minimumPeriod = pollPeriodMs - periodDeviationMs;
                 AtomicLong currentSleep = new AtomicLong(0);
-                AjendaScheduler.this.poller.scheduleWithFixedDelay(() -> {
+                AjendaScheduler.this.poller.scheduleWithFixedDelay(
+                        () -> {
                             try {
                                 long nextSleep = ThreadLocalRandom.current()
                                         .nextLong(0, 2 * periodDeviationMs);
                                 Thread.sleep(currentSleep.getAndSet(nextSleep));
-                                LOGGER.debug("About to poll topic {}", AjendaScheduler.this.getTopic());
+                                LOGGER.debug(ABOUT_TO_POLL_TOPIC_LOGF, AjendaScheduler.this.getTopic());
                                 AtLeastOnceModel.process(
                                         AjendaScheduler.this,
                                         minimumPeriod + nextSleep,
@@ -476,11 +535,21 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                                         timeout,
                                         false,
                                         listener,
-                                        customCondition);
-                            } catch (Throwable th) {
+                                        customCondition
+                                );
+                            } catch (InterruptedException e) {
+                                LOGGER.error(String.format(
+                                        THREAD_WAS_INTERRUPTED_WHILE_POLLING_TOPIC_STRF,
+                                        AjendaScheduler.this.getTopic()
+                                ), e);
+                                Thread.currentThread().interrupt();
+                            } catch (Exception th) {
                                 //TODO
                                 //Show must go on
-                                LOGGER.error(String.format("Unexpected error when polling topic %s", AjendaScheduler.this.getTopic()), th);
+                                LOGGER.error(String.format(
+                                        UNEXPECTED_ERROR_WHEN_POLLING_TOPIC_STRF,
+                                        AjendaScheduler.this.getTopic()
+                                ), th);
                             }
                         },
                         remainingDelay,
@@ -488,9 +557,10 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                         TimeUnit.MILLISECONDS
                 );
             } else {
-                AjendaScheduler.this.poller.scheduleAtFixedRate(() -> {
+                AjendaScheduler.this.poller.scheduleAtFixedRate(
+                        () -> {
                             try {
-                                LOGGER.debug("About to poll topic {}", AjendaScheduler.this.getTopic());
+                                LOGGER.debug(ABOUT_TO_POLL_TOPIC_LOGF, AjendaScheduler.this.getTopic());
                                 AtLeastOnceModel.process(
                                         AjendaScheduler.this,
                                         pollPeriodMs,
@@ -498,11 +568,21 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                                         timeout,
                                         false,
                                         listener,
-                                        customCondition);
-                            } catch (Throwable th) {
+                                        customCondition
+                                );
+                            } catch (InterruptedException e) {
+                                LOGGER.error(String.format(
+                                        THREAD_WAS_INTERRUPTED_WHILE_POLLING_TOPIC_STRF,
+                                        AjendaScheduler.this.getTopic()
+                                ), e);
+                                Thread.currentThread().interrupt();
+                            } catch (Exception th) {
                                 //TODO
                                 //Show must go on
-                                LOGGER.error(String.format("Unexpected error when polling topic %s", AjendaScheduler.this.getTopic()), th);
+                                LOGGER.error(String.format(
+                                        UNEXPECTED_ERROR_WHEN_POLLING_TOPIC_STRF,
+                                        AjendaScheduler.this.getTopic()
+                                ), th);
                             }
                         },
                         remainingDelay,
@@ -513,7 +593,10 @@ public class AjendaScheduler extends AbstractAjendaBooker {
         }
 
         //Connection In
-        public void readAtLeastOnceTransactional(long timeout, TransactionalAppointmentListener listener) throws Exception {
+        public void readAtLeastOnceTransactional(
+                long timeout,
+                TransactionalAppointmentListener listener
+        ) {
             long remainingDelay = 0L;
             if (AjendaScheduler.this.pollerScheduledFuture != null) {
                 remainingDelay = AjendaScheduler.this.pollerScheduledFuture.getDelay(TimeUnit.MILLISECONDS);
@@ -522,12 +605,13 @@ public class AjendaScheduler extends AbstractAjendaBooker {
             if (this.periodDeviationMs > 0) {
                 long minimumPeriod = pollPeriodMs - periodDeviationMs;
                 AtomicLong currentSleep = new AtomicLong(0);
-                AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleWithFixedDelay(() -> {
+                AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleWithFixedDelay(
+                        () -> {
                             try {
                                 long nextSleep = ThreadLocalRandom.current()
                                         .nextLong(0, 2 * periodDeviationMs);
                                 Thread.sleep(currentSleep.getAndSet(nextSleep));
-                                LOGGER.debug("About to poll topic {}", AjendaScheduler.this.getTopic());
+                                LOGGER.debug(ABOUT_TO_POLL_TOPIC_LOGF, AjendaScheduler.this.getTopic());
                                 AtLeastOnceModel.process(
                                         AjendaScheduler.this,
                                         minimumPeriod + nextSleep,
@@ -535,10 +619,20 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                                         timeout,
                                         false,
                                         listener,
-                                        customCondition);
-                            } catch (Throwable th) {
+                                        customCondition
+                                );
+                            } catch (InterruptedException e) {
+                                LOGGER.error(String.format(
+                                        THREAD_WAS_INTERRUPTED_WHILE_POLLING_TOPIC_STRF,
+                                        AjendaScheduler.this.getTopic()
+                                ), e);
+                                Thread.currentThread().interrupt();
+                            } catch (Exception th) {
                                 //TODO
-                                LOGGER.error(String.format("Unexpected error when polling topic %s", AjendaScheduler.this.getTopic()), th);
+                                LOGGER.error(String.format(
+                                        UNEXPECTED_ERROR_WHEN_POLLING_TOPIC_STRF,
+                                        AjendaScheduler.this.getTopic()
+                                ), th);
                             }
                         },
                         remainingDelay,
@@ -546,9 +640,10 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                         TimeUnit.MILLISECONDS
                 );
             } else {
-                AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleAtFixedRate(() -> {
+                AjendaScheduler.this.pollerScheduledFuture = AjendaScheduler.this.poller.scheduleAtFixedRate(
+                        () -> {
                             try {
-                                LOGGER.debug("About to poll topic {}", AjendaScheduler.this.getTopic());
+                                LOGGER.debug(ABOUT_TO_POLL_TOPIC_LOGF, AjendaScheduler.this.getTopic());
                                 AtLeastOnceModel.process(
                                         AjendaScheduler.this,
                                         pollPeriodMs,
@@ -556,10 +651,20 @@ public class AjendaScheduler extends AbstractAjendaBooker {
                                         timeout,
                                         false,
                                         listener,
-                                        customCondition);
-                            } catch (Throwable th) {
+                                        customCondition
+                                );
+                            } catch (InterruptedException e) {
+                                LOGGER.error(String.format(
+                                        THREAD_WAS_INTERRUPTED_WHILE_POLLING_TOPIC_STRF,
+                                        AjendaScheduler.this.getTopic()
+                                ), e);
+                                Thread.currentThread().interrupt();
+                            } catch (Exception th) {
                                 //TODO
-                                LOGGER.error(String.format("Unexpected error when polling topic %s", AjendaScheduler.this.getTopic()), th);
+                                LOGGER.error(String.format(
+                                        UNEXPECTED_ERROR_WHEN_POLLING_TOPIC_STRF,
+                                        AjendaScheduler.this.getTopic()
+                                ), th);
                             }
                         },
                         remainingDelay,
@@ -593,5 +698,9 @@ public class AjendaScheduler extends AbstractAjendaBooker {
 
     ScheduledThreadPoolExecutor getPoller() {
         return poller;
+    }
+
+    public long getCreationTime() {
+        return creationTime;
     }
 }

@@ -17,7 +17,7 @@ public class TestDataSource implements JdbcConnectionFactory {
 
         config = new HikariConfig();
         config.setDataSource(postgresDatabase);
-        //config.setJdbcUrl("core:postgresql://localhost:5432/postgres");
+//        config.setJdbcUrl("core:postgresql://localhost:5432/postgres");
 //        config.setUsername("postgres");
 //        config.setPassword("mysecretpassword");
 //        config.addDataSourceProperty("cachePrepStmts", "true");
